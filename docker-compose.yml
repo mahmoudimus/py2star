@@ -1,0 +1,22 @@
+version: '3.7'
+
+services:
+  app:
+    build: ""
+    volumes:
+      - .:/opt/app/
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: 0
+    ports:
+      - "3141:3141"
+      - "3142:3142"
+      - "8080:8080"
+    stdin_open: true
+    tty: true
+
+# PHP_EXTENSION_XDEBUG: 1
+# PHP_INI_XDEBUG__REMOTE_PORT: 10000
+# PHP_IDE_CONFIG: "serverName="
+# XDEBUG_CONFIG: "remote_port= remote_autostart=1"
