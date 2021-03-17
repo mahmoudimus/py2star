@@ -1,6 +1,10 @@
-class Foo(object):
+from .fixture_data import Foo
+
+
+class RewriteMe(Foo):
     def __init__(self):
         """Do stuff"""
+        super(Foo).__init__()
 
     def bar(self,
             q,
@@ -13,4 +17,7 @@ class Foo(object):
         # multi
         # line
         # comment
+        pass
+
+    def write(self):
         pass

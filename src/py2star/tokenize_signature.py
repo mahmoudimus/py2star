@@ -78,8 +78,9 @@ def _on_function_or_class(definition, gen, last_line, tok):
     parens = 0
     while tok.exact_type != token.COLON or parens > 0:
 
+        # this logic allows us to detect whether or not we
+        # are in a multi-line function signature
         if last_line != tok.end[0]:
-            logger.info("--> do i ever get here?")
             definition.append(tok.line)
             last_line = tok.end[0]
 

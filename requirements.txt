@@ -1,1 +1,3 @@
 astunparse==1.6.3
+# https://stackoverflow.com/a/54794506/133514
+astor@git+git://github.com/berkerpeksag/astor.git@master#egg=astor

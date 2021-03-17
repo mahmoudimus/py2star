@@ -8,7 +8,8 @@ import time
 from datetime import datetime, timedelta
 
 
-from tokenize_signature import find_definitions
+print(sys.path)
+from py2star.tokenize_signature import find_definitions
 
 
 logger = logging.getLogger(__name__)
