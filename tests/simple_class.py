@@ -1,10 +1,7 @@
-from .fixture_data import Foo
+import unittest
 
 
-class RewriteMe(Foo):
-    def __init__(self):
-        """Do stuff"""
-        super(Foo).__init__()
+class RewriteMe(unittest.TestCase):
 
     def bar(self,
             q,
@@ -21,3 +18,9 @@ class RewriteMe(Foo):
 
     def write(self):
         pass
+
+    def test_success(self):
+        self.assertEqual(1, 1)
+
+    def test_fail(self):
+        self.assertEqual(1, 2)
