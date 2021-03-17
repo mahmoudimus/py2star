@@ -10,11 +10,40 @@ from py2star import cli
 logger = logging.getLogger(__name__)
 
 import ast
+import itertools
 
 from py2star import rewriter
 from py2star import starify
 
 
-def test_rewrite():
+@pytest.fixture()
+def program() -> ast.Module:
     m = ast.parse(open("simple_class.py").read())
-    starify.starify(m)
+    return m
+
+
+def test_rewrite():
+    import io
+    from lib2to3 import refactor, pygram, fixer_base
+    _fixers = refactor.get_fixers_from_package("py2star.fixes")
+    assert isinstance(_fixers, list) and len(_fixers) != 0
+
+    def rt(fixers, options=None, explicit=None):
+        return refactor.RefactoringTool(fixers, options, explicit)
+
+    fixer = rt(_fixers)
+    out = fixer.refactor_string(open("simple_class.py").read(),
+                                "simple_class.py")
+    print(out)
+
+
+def test_ast_visiting(program):
+    visitor = rewriter.FunctionAndMethodVisitor()
+    visitor.visit(program)
+    for function in itertools.chain(visitor.functions, visitor.methods):
+        print(function.name)
+
+
+def test_starify(program):
+    starify.starify(program)
+

@@ -1,7 +1,8 @@
+from unittest import TestCase
 import unittest
 
 
-class RewriteMe(unittest.TestCase):
+class RewriteMe(TestCase):
 
     def bar(self,
             q,
