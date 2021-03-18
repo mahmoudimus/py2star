@@ -56,6 +56,9 @@ def dedent_suite(suite, dedent):
 
 class FixDeclass(BaseFix):
 
+    run_order = 7   # Fixers will be sorted by run order before execution
+                    # Lower numbers will be run first.
+
     PATTERN = """
       classdef< 'class' name=any ['(' 
            (power< 'unittest' trailer< '.' 'TestCase' > > | 'TestCase')

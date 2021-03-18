@@ -20,8 +20,15 @@ class RewriteMe(TestCase):
     def write(self):
         pass
 
+    def doit(self):
+        x = b'foo'
+        return x
+
     def test_success(self):
         self.assertEqual(1, 1)
 
     def test_fail(self):
         self.assertEqual(1, 2)
+
+    def test_doit(self):
+        self.assertRegex("herpa", "her.*", "could not find herpa")

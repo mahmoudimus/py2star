@@ -75,448 +75,448 @@ class GcmTests(unittest.TestCase):
     def test_nonce_must_be_bytes(self):
         self.assertRaises(TypeError, AES.new, self.key_128, AES.MODE_GCM,
                           nonce=u'test12345678')
-#
-#     def test_nonce_length(self):
-#         # nonce can be of any length (but not empty)
-#         self.assertRaises(ValueError, AES.new, self.key_128, AES.MODE_GCM,
-#                           nonce=b"")
-#
-#         for x in range(1, 128):
-#             cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=bchr(1) * x)
-#             cipher.encrypt(bchr(1))
-#
-#     def test_block_size_128(self):
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         self.assertEqual(cipher.block_size, AES.block_size)
-#
-#     def test_nonce_attribute(self):
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         self.assertEqual(cipher.nonce, self.nonce_96)
-#
-#         # By default, a 15 bytes long nonce is randomly generated
-#         nonce1 = AES.new(self.key_128, AES.MODE_GCM).nonce
-#         nonce2 = AES.new(self.key_128, AES.MODE_GCM).nonce
-#         self.assertEqual(len(nonce1), 16)
-#         self.assertNotEqual(nonce1, nonce2)
-#
-#     def test_unknown_parameters(self):
-#         self.assertRaises(TypeError, AES.new, self.key_128, AES.MODE_GCM,
-#                           self.nonce_96, 7)
-#         self.assertRaises(TypeError, AES.new, self.key_128, AES.MODE_GCM,
-#                           nonce=self.nonce_96, unknown=7)
-#
-#         # But some are only known by the base cipher
-#         # (e.g. use_aesni consumed by the AES module)
-#         AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96,
-#                 use_aesni=False)
-#
-#     def test_null_encryption_decryption(self):
-#         for func in "encrypt", "decrypt":
-#             cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#             result = getattr(cipher, func)(b"")
-#             self.assertEqual(result, b"")
-#
-#     def test_either_encrypt_or_decrypt(self):
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.encrypt(b"")
-#         self.assertRaises(TypeError, cipher.decrypt, b"")
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.decrypt(b"")
-#         self.assertRaises(TypeError, cipher.encrypt, b"")
-#
-#     def test_data_must_be_bytes(self):
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         self.assertRaises(TypeError, cipher.encrypt, u'test1234567890-*')
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         self.assertRaises(TypeError, cipher.decrypt, u'test1234567890-*')
-#
-#     def test_mac_len(self):
-#         # Invalid MAC length
-#         self.assertRaises(ValueError, AES.new, self.key_128, AES.MODE_GCM,
-#                           nonce=self.nonce_96, mac_len=3)
-#         self.assertRaises(ValueError, AES.new, self.key_128, AES.MODE_GCM,
-#                           nonce=self.nonce_96, mac_len=16+1)
-#
-#         # Valid MAC length
-#         for mac_len in range(5, 16 + 1):
-#             cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96,
-#                              mac_len=mac_len)
-#             _, mac = cipher.encrypt_and_digest(self.data_128)
-#             self.assertEqual(len(mac), mac_len)
-#
-#         # Default MAC length
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         _, mac = cipher.encrypt_and_digest(self.data_128)
-#         self.assertEqual(len(mac), 16)
-#
-#     def test_invalid_mac(self):
-#         from Crypto.Util.strxor import strxor_c
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         ct, mac = cipher.encrypt_and_digest(self.data_128)
-#
-#         invalid_mac = strxor_c(mac, 0x01)
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         self.assertRaises(ValueError, cipher.decrypt_and_verify, ct,
-#                           invalid_mac)
-#
-#     def test_hex_mac(self):
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         mac_hex = cipher.hexdigest()
-#         self.assertEqual(cipher.digest(), unhexlify(mac_hex))
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.hexverify(mac_hex)
-#
-#     def test_message_chunks(self):
-#         # Validate that both associated data and plaintext/ciphertext
-#         # can be broken up in chunks of arbitrary length
-#
-#         auth_data = get_tag_random("authenticated data", 127)
-#         plaintext = get_tag_random("plaintext", 127)
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.update(auth_data)
-#         ciphertext, ref_mac = cipher.encrypt_and_digest(plaintext)
-#
-#         def break_up(data, chunk_length):
-#             return [data[i:i+chunk_length] for i in range(0, len(data),
-#                     chunk_length)]
-#
-#         # Encryption
-#         for chunk_length in 1, 2, 3, 7, 10, 13, 16, 40, 80, 128:
-#
-#             cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#
-#             for chunk in break_up(auth_data, chunk_length):
-#                 cipher.update(chunk)
-#             pt2 = b""
-#             for chunk in break_up(ciphertext, chunk_length):
-#                 pt2 += cipher.decrypt(chunk)
-#             self.assertEqual(plaintext, pt2)
-#             cipher.verify(ref_mac)
-#
-#         # Decryption
-#         for chunk_length in 1, 2, 3, 7, 10, 13, 16, 40, 80, 128:
-#
-#             cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#
-#             for chunk in break_up(auth_data, chunk_length):
-#                 cipher.update(chunk)
-#             ct2 = b""
-#             for chunk in break_up(plaintext, chunk_length):
-#                 ct2 += cipher.encrypt(chunk)
-#             self.assertEqual(ciphertext, ct2)
-#             self.assertEquals(cipher.digest(), ref_mac)
-#
-#     def test_bytearray(self):
-#
-#         # Encrypt
-#         key_ba = bytearray(self.key_128)
-#         nonce_ba = bytearray(self.nonce_96)
-#         header_ba = bytearray(self.data_128)
-#         data_ba = bytearray(self.data_128)
-#
-#         cipher1 = AES.new(self.key_128,
-#                           AES.MODE_GCM,
-#                           nonce=self.nonce_96)
-#         cipher1.update(self.data_128)
-#         ct = cipher1.encrypt(self.data_128)
-#         tag = cipher1.digest()
-#
-#         cipher2 = AES.new(key_ba,
-#                           AES.MODE_GCM,
-#                           nonce=nonce_ba)
-#         key_ba[:3] = b"\xFF\xFF\xFF"
-#         nonce_ba[:3] = b"\xFF\xFF\xFF"
-#         cipher2.update(header_ba)
-#         header_ba[:3] = b"\xFF\xFF\xFF"
-#         ct_test = cipher2.encrypt(data_ba)
-#         data_ba[:3] = b"\xFF\xFF\xFF"
-#         tag_test = cipher2.digest()
-#
-#         self.assertEqual(ct, ct_test)
-#         self.assertEqual(tag, tag_test)
-#         self.assertEqual(cipher1.nonce, cipher2.nonce)
-#
-#         # Decrypt
-#         key_ba = bytearray(self.key_128)
-#         nonce_ba = bytearray(self.nonce_96)
-#         header_ba = bytearray(self.data_128)
-#         del data_ba
-#
-#         cipher4 = AES.new(key_ba,
-#                           AES.MODE_GCM,
-#                           nonce=nonce_ba)
-#         key_ba[:3] = b"\xFF\xFF\xFF"
-#         nonce_ba[:3] = b"\xFF\xFF\xFF"
-#         cipher4.update(header_ba)
-#         header_ba[:3] = b"\xFF\xFF\xFF"
-#         pt_test = cipher4.decrypt_and_verify(bytearray(ct_test), bytearray(tag_test))
-#
-#         self.assertEqual(self.data_128, pt_test)
-#
-#     def test_memoryview(self):
-#
-#         # Encrypt
-#         key_mv = memoryview(bytearray(self.key_128))
-#         nonce_mv = memoryview(bytearray(self.nonce_96))
-#         header_mv = memoryview(bytearray(self.data_128))
-#         data_mv = memoryview(bytearray(self.data_128))
-#
-#         cipher1 = AES.new(self.key_128,
-#                           AES.MODE_GCM,
-#                           nonce=self.nonce_96)
-#         cipher1.update(self.data_128)
-#         ct = cipher1.encrypt(self.data_128)
-#         tag = cipher1.digest()
-#
-#         cipher2 = AES.new(key_mv,
-#                           AES.MODE_GCM,
-#                           nonce=nonce_mv)
-#         key_mv[:3] = b"\xFF\xFF\xFF"
-#         nonce_mv[:3] = b"\xFF\xFF\xFF"
-#         cipher2.update(header_mv)
-#         header_mv[:3] = b"\xFF\xFF\xFF"
-#         ct_test = cipher2.encrypt(data_mv)
-#         data_mv[:3] = b"\xFF\xFF\xFF"
-#         tag_test = cipher2.digest()
-#
-#         self.assertEqual(ct, ct_test)
-#         self.assertEqual(tag, tag_test)
-#         self.assertEqual(cipher1.nonce, cipher2.nonce)
-#
-#         # Decrypt
-#         key_mv = memoryview(bytearray(self.key_128))
-#         nonce_mv = memoryview(bytearray(self.nonce_96))
-#         header_mv = memoryview(bytearray(self.data_128))
-#         del data_mv
-#
-#         cipher4 = AES.new(key_mv,
-#                           AES.MODE_GCM,
-#                           nonce=nonce_mv)
-#         key_mv[:3] = b"\xFF\xFF\xFF"
-#         nonce_mv[:3] = b"\xFF\xFF\xFF"
-#         cipher4.update(header_mv)
-#         header_mv[:3] = b"\xFF\xFF\xFF"
-#         pt_test = cipher4.decrypt_and_verify(memoryview(ct_test), memoryview(tag_test))
-#
-#         self.assertEqual(self.data_128, pt_test)
-#
-#     def test_output_param(self):
-#
-#         pt = b'5' * 16
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         ct = cipher.encrypt(pt)
-#         tag = cipher.digest()
-#
-#         output = bytearray(16)
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         res = cipher.encrypt(pt, output=output)
-#         self.assertEqual(ct, output)
-#         self.assertEqual(res, None)
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         res = cipher.decrypt(ct, output=output)
-#         self.assertEqual(pt, output)
-#         self.assertEqual(res, None)
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         res, tag_out = cipher.encrypt_and_digest(pt, output=output)
-#         self.assertEqual(ct, output)
-#         self.assertEqual(res, None)
-#         self.assertEqual(tag, tag_out)
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         res = cipher.decrypt_and_verify(ct, tag, output=output)
-#         self.assertEqual(pt, output)
-#         self.assertEqual(res, None)
-#
-#     def test_output_param_memoryview(self):
-#
-#         pt = b'5' * 16
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         ct = cipher.encrypt(pt)
-#
-#         output = memoryview(bytearray(16))
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.encrypt(pt, output=output)
-#         self.assertEqual(ct, output)
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.decrypt(ct, output=output)
-#         self.assertEqual(pt, output)
-#
-#     def test_output_param_neg(self):
-#
-#         pt = b'5' * 16
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         ct = cipher.encrypt(pt)
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         self.assertRaises(TypeError, cipher.encrypt, pt, output=b'0'*16)
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         self.assertRaises(TypeError, cipher.decrypt, ct, output=b'0'*16)
-#
-#         shorter_output = bytearray(15)
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         self.assertRaises(ValueError, cipher.encrypt, pt, output=shorter_output)
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         self.assertRaises(ValueError, cipher.decrypt, ct, output=shorter_output)
-#
-#
-# class GcmFSMTests(unittest.TestCase):
-#
-#     key_128 = get_tag_random("key_128", 16)
-#     nonce_96 = get_tag_random("nonce_128", 12)
-#     data_128 = get_tag_random("data_128", 16)
-#
-#     def test_valid_init_encrypt_decrypt_digest_verify(self):
-#         # No authenticated data, fixed plaintext
-#         # Verify path INIT->ENCRYPT->DIGEST
-#         cipher = AES.new(self.key_128, AES.MODE_GCM,
-#                          nonce=self.nonce_96)
-#         ct = cipher.encrypt(self.data_128)
-#         mac = cipher.digest()
-#
-#         # Verify path INIT->DECRYPT->VERIFY
-#         cipher = AES.new(self.key_128, AES.MODE_GCM,
-#                          nonce=self.nonce_96)
-#         cipher.decrypt(ct)
-#         cipher.verify(mac)
-#
-#     def test_valid_init_update_digest_verify(self):
-#         # No plaintext, fixed authenticated data
-#         # Verify path INIT->UPDATE->DIGEST
-#         cipher = AES.new(self.key_128, AES.MODE_GCM,
-#                          nonce=self.nonce_96)
-#         cipher.update(self.data_128)
-#         mac = cipher.digest()
-#
-#         # Verify path INIT->UPDATE->VERIFY
-#         cipher = AES.new(self.key_128, AES.MODE_GCM,
-#                          nonce=self.nonce_96)
-#         cipher.update(self.data_128)
-#         cipher.verify(mac)
-#
-#     def test_valid_full_path(self):
-#         # Fixed authenticated data, fixed plaintext
-#         # Verify path INIT->UPDATE->ENCRYPT->DIGEST
-#         cipher = AES.new(self.key_128, AES.MODE_GCM,
-#                          nonce=self.nonce_96)
-#         cipher.update(self.data_128)
-#         ct = cipher.encrypt(self.data_128)
-#         mac = cipher.digest()
-#
-#         # Verify path INIT->UPDATE->DECRYPT->VERIFY
-#         cipher = AES.new(self.key_128, AES.MODE_GCM,
-#                          nonce=self.nonce_96)
-#         cipher.update(self.data_128)
-#         cipher.decrypt(ct)
-#         cipher.verify(mac)
-#
-#     def test_valid_init_digest(self):
-#         # Verify path INIT->DIGEST
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.digest()
-#
-#     def test_valid_init_verify(self):
-#         # Verify path INIT->VERIFY
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         mac = cipher.digest()
-#
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.verify(mac)
-#
-#     def test_valid_multiple_encrypt_or_decrypt(self):
-#         for method_name in "encrypt", "decrypt":
-#             for auth_data in (None, b"333", self.data_128,
-#                               self.data_128 + b"3"):
-#                 if auth_data is None:
-#                     assoc_len = None
-#                 else:
-#                     assoc_len = len(auth_data)
-#                 cipher = AES.new(self.key_128, AES.MODE_GCM,
-#                                  nonce=self.nonce_96)
-#                 if auth_data is not None:
-#                     cipher.update(auth_data)
-#                 method = getattr(cipher, method_name)
-#                 method(self.data_128)
-#                 method(self.data_128)
-#                 method(self.data_128)
-#                 method(self.data_128)
-#
-#     def test_valid_multiple_digest_or_verify(self):
-#         # Multiple calls to digest
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.update(self.data_128)
-#         first_mac = cipher.digest()
-#         for x in range(4):
-#             self.assertEqual(first_mac, cipher.digest())
-#
-#         # Multiple calls to verify
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.update(self.data_128)
-#         for x in range(5):
-#             cipher.verify(first_mac)
-#
-#     def test_valid_encrypt_and_digest_decrypt_and_verify(self):
-#         # encrypt_and_digest
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.update(self.data_128)
-#         ct, mac = cipher.encrypt_and_digest(self.data_128)
-#
-#         # decrypt_and_verify
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         cipher.update(self.data_128)
-#         pt = cipher.decrypt_and_verify(ct, mac)
-#         self.assertEqual(self.data_128, pt)
-#
-#     def test_invalid_mixing_encrypt_decrypt(self):
-#         # Once per method, with or without assoc. data
-#         for method1_name, method2_name in (("encrypt", "decrypt"),
-#                                            ("decrypt", "encrypt")):
-#             for assoc_data_present in (True, False):
-#                 cipher = AES.new(self.key_128, AES.MODE_GCM,
-#                                  nonce=self.nonce_96)
-#                 if assoc_data_present:
-#                     cipher.update(self.data_128)
-#                 getattr(cipher, method1_name)(self.data_128)
-#                 self.assertRaises(TypeError, getattr(cipher, method2_name),
-#                                   self.data_128)
-#
-#     def test_invalid_encrypt_or_update_after_digest(self):
-#         for method_name in "encrypt", "update":
-#             cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#             cipher.encrypt(self.data_128)
-#             cipher.digest()
-#             self.assertRaises(TypeError, getattr(cipher, method_name),
-#                               self.data_128)
-#
-#             cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#             cipher.encrypt_and_digest(self.data_128)
-#
-#     def test_invalid_decrypt_or_update_after_verify(self):
-#         cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#         ct = cipher.encrypt(self.data_128)
-#         mac = cipher.digest()
-#
-#         for method_name in "decrypt", "update":
-#             cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#             cipher.decrypt(ct)
-#             cipher.verify(mac)
-#             self.assertRaises(TypeError, getattr(cipher, method_name),
-#                               self.data_128)
-#
-#             cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
-#             cipher.decrypt_and_verify(ct, mac)
-#             self.assertRaises(TypeError, getattr(cipher, method_name),
-#                               self.data_128)
-#
-#
+
+    def test_nonce_length(self):
+        # nonce can be of any length (but not empty)
+        self.assertRaises(ValueError, AES.new, self.key_128, AES.MODE_GCM,
+                          nonce=b"")
+
+        for x in range(1, 128):
+            cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=bchr(1) * x)
+            cipher.encrypt(bchr(1))
+
+    def test_block_size_128(self):
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        self.assertEqual(cipher.block_size, AES.block_size)
+
+    def test_nonce_attribute(self):
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        self.assertEqual(cipher.nonce, self.nonce_96)
+
+        # By default, a 15 bytes long nonce is randomly generated
+        nonce1 = AES.new(self.key_128, AES.MODE_GCM).nonce
+        nonce2 = AES.new(self.key_128, AES.MODE_GCM).nonce
+        self.assertEqual(len(nonce1), 16)
+        self.assertNotEqual(nonce1, nonce2)
+
+    def test_unknown_parameters(self):
+        self.assertRaises(TypeError, AES.new, self.key_128, AES.MODE_GCM,
+                          self.nonce_96, 7)
+        self.assertRaises(TypeError, AES.new, self.key_128, AES.MODE_GCM,
+                          nonce=self.nonce_96, unknown=7)
+
+        # But some are only known by the base cipher
+        # (e.g. use_aesni consumed by the AES module)
+        AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96,
+                use_aesni=False)
+
+    def test_null_encryption_decryption(self):
+        for func in "encrypt", "decrypt":
+            cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+            result = getattr(cipher, func)(b"")
+            self.assertEqual(result, b"")
+
+    def test_either_encrypt_or_decrypt(self):
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.encrypt(b"")
+        self.assertRaises(TypeError, cipher.decrypt, b"")
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.decrypt(b"")
+        self.assertRaises(TypeError, cipher.encrypt, b"")
+
+    def test_data_must_be_bytes(self):
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        self.assertRaises(TypeError, cipher.encrypt, u'test1234567890-*')
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        self.assertRaises(TypeError, cipher.decrypt, u'test1234567890-*')
+
+    def test_mac_len(self):
+        # Invalid MAC length
+        self.assertRaises(ValueError, AES.new, self.key_128, AES.MODE_GCM,
+                          nonce=self.nonce_96, mac_len=3)
+        self.assertRaises(ValueError, AES.new, self.key_128, AES.MODE_GCM,
+                          nonce=self.nonce_96, mac_len=16+1)
+
+        # Valid MAC length
+        for mac_len in range(5, 16 + 1):
+            cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96,
+                             mac_len=mac_len)
+            _, mac = cipher.encrypt_and_digest(self.data_128)
+            self.assertEqual(len(mac), mac_len)
+
+        # Default MAC length
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        _, mac = cipher.encrypt_and_digest(self.data_128)
+        self.assertEqual(len(mac), 16)
+
+    def test_invalid_mac(self):
+        from Crypto.Util.strxor import strxor_c
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        ct, mac = cipher.encrypt_and_digest(self.data_128)
+
+        invalid_mac = strxor_c(mac, 0x01)
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        self.assertRaises(ValueError, cipher.decrypt_and_verify, ct,
+                          invalid_mac)
+
+    def test_hex_mac(self):
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        mac_hex = cipher.hexdigest()
+        self.assertEqual(cipher.digest(), unhexlify(mac_hex))
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.hexverify(mac_hex)
+
+    def test_message_chunks(self):
+        # Validate that both associated data and plaintext/ciphertext
+        # can be broken up in chunks of arbitrary length
+
+        auth_data = get_tag_random("authenticated data", 127)
+        plaintext = get_tag_random("plaintext", 127)
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.update(auth_data)
+        ciphertext, ref_mac = cipher.encrypt_and_digest(plaintext)
+
+        def break_up(data, chunk_length):
+            return [data[i:i+chunk_length] for i in range(0, len(data),
+                    chunk_length)]
+
+        # Encryption
+        for chunk_length in 1, 2, 3, 7, 10, 13, 16, 40, 80, 128:
+
+            cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+
+            for chunk in break_up(auth_data, chunk_length):
+                cipher.update(chunk)
+            pt2 = b""
+            for chunk in break_up(ciphertext, chunk_length):
+                pt2 += cipher.decrypt(chunk)
+            self.assertEqual(plaintext, pt2)
+            cipher.verify(ref_mac)
+
+        # Decryption
+        for chunk_length in 1, 2, 3, 7, 10, 13, 16, 40, 80, 128:
+
+            cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+
+            for chunk in break_up(auth_data, chunk_length):
+                cipher.update(chunk)
+            ct2 = b""
+            for chunk in break_up(plaintext, chunk_length):
+                ct2 += cipher.encrypt(chunk)
+            self.assertEqual(ciphertext, ct2)
+            self.assertEquals(cipher.digest(), ref_mac)
+
+    def test_bytearray(self):
+
+        # Encrypt
+        key_ba = bytearray(self.key_128)
+        nonce_ba = bytearray(self.nonce_96)
+        header_ba = bytearray(self.data_128)
+        data_ba = bytearray(self.data_128)
+
+        cipher1 = AES.new(self.key_128,
+                          AES.MODE_GCM,
+                          nonce=self.nonce_96)
+        cipher1.update(self.data_128)
+        ct = cipher1.encrypt(self.data_128)
+        tag = cipher1.digest()
+
+        cipher2 = AES.new(key_ba,
+                          AES.MODE_GCM,
+                          nonce=nonce_ba)
+        key_ba[:3] = b"\xFF\xFF\xFF"
+        nonce_ba[:3] = b"\xFF\xFF\xFF"
+        cipher2.update(header_ba)
+        header_ba[:3] = b"\xFF\xFF\xFF"
+        ct_test = cipher2.encrypt(data_ba)
+        data_ba[:3] = b"\xFF\xFF\xFF"
+        tag_test = cipher2.digest()
+
+        self.assertEqual(ct, ct_test)
+        self.assertEqual(tag, tag_test)
+        self.assertEqual(cipher1.nonce, cipher2.nonce)
+
+        # Decrypt
+        key_ba = bytearray(self.key_128)
+        nonce_ba = bytearray(self.nonce_96)
+        header_ba = bytearray(self.data_128)
+        del data_ba
+
+        cipher4 = AES.new(key_ba,
+                          AES.MODE_GCM,
+                          nonce=nonce_ba)
+        key_ba[:3] = b"\xFF\xFF\xFF"
+        nonce_ba[:3] = b"\xFF\xFF\xFF"
+        cipher4.update(header_ba)
+        header_ba[:3] = b"\xFF\xFF\xFF"
+        pt_test = cipher4.decrypt_and_verify(bytearray(ct_test), bytearray(tag_test))
+
+        self.assertEqual(self.data_128, pt_test)
+
+    def test_memoryview(self):
+
+        # Encrypt
+        key_mv = memoryview(bytearray(self.key_128))
+        nonce_mv = memoryview(bytearray(self.nonce_96))
+        header_mv = memoryview(bytearray(self.data_128))
+        data_mv = memoryview(bytearray(self.data_128))
+
+        cipher1 = AES.new(self.key_128,
+                          AES.MODE_GCM,
+                          nonce=self.nonce_96)
+        cipher1.update(self.data_128)
+        ct = cipher1.encrypt(self.data_128)
+        tag = cipher1.digest()
+
+        cipher2 = AES.new(key_mv,
+                          AES.MODE_GCM,
+                          nonce=nonce_mv)
+        key_mv[:3] = b"\xFF\xFF\xFF"
+        nonce_mv[:3] = b"\xFF\xFF\xFF"
+        cipher2.update(header_mv)
+        header_mv[:3] = b"\xFF\xFF\xFF"
+        ct_test = cipher2.encrypt(data_mv)
+        data_mv[:3] = b"\xFF\xFF\xFF"
+        tag_test = cipher2.digest()
+
+        self.assertEqual(ct, ct_test)
+        self.assertEqual(tag, tag_test)
+        self.assertEqual(cipher1.nonce, cipher2.nonce)
+
+        # Decrypt
+        key_mv = memoryview(bytearray(self.key_128))
+        nonce_mv = memoryview(bytearray(self.nonce_96))
+        header_mv = memoryview(bytearray(self.data_128))
+        del data_mv
+
+        cipher4 = AES.new(key_mv,
+                          AES.MODE_GCM,
+                          nonce=nonce_mv)
+        key_mv[:3] = b"\xFF\xFF\xFF"
+        nonce_mv[:3] = b"\xFF\xFF\xFF"
+        cipher4.update(header_mv)
+        header_mv[:3] = b"\xFF\xFF\xFF"
+        pt_test = cipher4.decrypt_and_verify(memoryview(ct_test), memoryview(tag_test))
+
+        self.assertEqual(self.data_128, pt_test)
+
+    def test_output_param(self):
+
+        pt = b'5' * 16
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        ct = cipher.encrypt(pt)
+        tag = cipher.digest()
+
+        output = bytearray(16)
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        res = cipher.encrypt(pt, output=output)
+        self.assertEqual(ct, output)
+        self.assertEqual(res, None)
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        res = cipher.decrypt(ct, output=output)
+        self.assertEqual(pt, output)
+        self.assertEqual(res, None)
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        res, tag_out = cipher.encrypt_and_digest(pt, output=output)
+        self.assertEqual(ct, output)
+        self.assertEqual(res, None)
+        self.assertEqual(tag, tag_out)
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        res = cipher.decrypt_and_verify(ct, tag, output=output)
+        self.assertEqual(pt, output)
+        self.assertEqual(res, None)
+
+    def test_output_param_memoryview(self):
+
+        pt = b'5' * 16
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        ct = cipher.encrypt(pt)
+
+        output = memoryview(bytearray(16))
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.encrypt(pt, output=output)
+        self.assertEqual(ct, output)
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.decrypt(ct, output=output)
+        self.assertEqual(pt, output)
+
+    def test_output_param_neg(self):
+
+        pt = b'5' * 16
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        ct = cipher.encrypt(pt)
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        self.assertRaises(TypeError, cipher.encrypt, pt, output=b'0'*16)
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        self.assertRaises(TypeError, cipher.decrypt, ct, output=b'0'*16)
+
+        shorter_output = bytearray(15)
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        self.assertRaises(ValueError, cipher.encrypt, pt, output=shorter_output)
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        self.assertRaises(ValueError, cipher.decrypt, ct, output=shorter_output)
+
+
+class GcmFSMTests(unittest.TestCase):
+
+    key_128 = get_tag_random("key_128", 16)
+    nonce_96 = get_tag_random("nonce_128", 12)
+    data_128 = get_tag_random("data_128", 16)
+
+    def test_valid_init_encrypt_decrypt_digest_verify(self):
+        # No authenticated data, fixed plaintext
+        # Verify path INIT->ENCRYPT->DIGEST
+        cipher = AES.new(self.key_128, AES.MODE_GCM,
+                         nonce=self.nonce_96)
+        ct = cipher.encrypt(self.data_128)
+        mac = cipher.digest()
+
+        # Verify path INIT->DECRYPT->VERIFY
+        cipher = AES.new(self.key_128, AES.MODE_GCM,
+                         nonce=self.nonce_96)
+        cipher.decrypt(ct)
+        cipher.verify(mac)
+
+    def test_valid_init_update_digest_verify(self):
+        # No plaintext, fixed authenticated data
+        # Verify path INIT->UPDATE->DIGEST
+        cipher = AES.new(self.key_128, AES.MODE_GCM,
+                         nonce=self.nonce_96)
+        cipher.update(self.data_128)
+        mac = cipher.digest()
+
+        # Verify path INIT->UPDATE->VERIFY
+        cipher = AES.new(self.key_128, AES.MODE_GCM,
+                         nonce=self.nonce_96)
+        cipher.update(self.data_128)
+        cipher.verify(mac)
+
+    def test_valid_full_path(self):
+        # Fixed authenticated data, fixed plaintext
+        # Verify path INIT->UPDATE->ENCRYPT->DIGEST
+        cipher = AES.new(self.key_128, AES.MODE_GCM,
+                         nonce=self.nonce_96)
+        cipher.update(self.data_128)
+        ct = cipher.encrypt(self.data_128)
+        mac = cipher.digest()
+
+        # Verify path INIT->UPDATE->DECRYPT->VERIFY
+        cipher = AES.new(self.key_128, AES.MODE_GCM,
+                         nonce=self.nonce_96)
+        cipher.update(self.data_128)
+        cipher.decrypt(ct)
+        cipher.verify(mac)
+
+    def test_valid_init_digest(self):
+        # Verify path INIT->DIGEST
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.digest()
+
+    def test_valid_init_verify(self):
+        # Verify path INIT->VERIFY
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        mac = cipher.digest()
+
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.verify(mac)
+
+    def test_valid_multiple_encrypt_or_decrypt(self):
+        for method_name in "encrypt", "decrypt":
+            for auth_data in (None, b"333", self.data_128,
+                              self.data_128 + b"3"):
+                if auth_data is None:
+                    assoc_len = None
+                else:
+                    assoc_len = len(auth_data)
+                cipher = AES.new(self.key_128, AES.MODE_GCM,
+                                 nonce=self.nonce_96)
+                if auth_data is not None:
+                    cipher.update(auth_data)
+                method = getattr(cipher, method_name)
+                method(self.data_128)
+                method(self.data_128)
+                method(self.data_128)
+                method(self.data_128)
+
+    def test_valid_multiple_digest_or_verify(self):
+        # Multiple calls to digest
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.update(self.data_128)
+        first_mac = cipher.digest()
+        for x in range(4):
+            self.assertEqual(first_mac, cipher.digest())
+
+        # Multiple calls to verify
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.update(self.data_128)
+        for x in range(5):
+            cipher.verify(first_mac)
+
+    def test_valid_encrypt_and_digest_decrypt_and_verify(self):
+        # encrypt_and_digest
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.update(self.data_128)
+        ct, mac = cipher.encrypt_and_digest(self.data_128)
+
+        # decrypt_and_verify
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        cipher.update(self.data_128)
+        pt = cipher.decrypt_and_verify(ct, mac)
+        self.assertEqual(self.data_128, pt)
+
+    def test_invalid_mixing_encrypt_decrypt(self):
+        # Once per method, with or without assoc. data
+        for method1_name, method2_name in (("encrypt", "decrypt"),
+                                           ("decrypt", "encrypt")):
+            for assoc_data_present in (True, False):
+                cipher = AES.new(self.key_128, AES.MODE_GCM,
+                                 nonce=self.nonce_96)
+                if assoc_data_present:
+                    cipher.update(self.data_128)
+                getattr(cipher, method1_name)(self.data_128)
+                self.assertRaises(TypeError, getattr(cipher, method2_name),
+                                  self.data_128)
+
+    def test_invalid_encrypt_or_update_after_digest(self):
+        for method_name in "encrypt", "update":
+            cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+            cipher.encrypt(self.data_128)
+            cipher.digest()
+            self.assertRaises(TypeError, getattr(cipher, method_name),
+                              self.data_128)
+
+            cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+            cipher.encrypt_and_digest(self.data_128)
+
+    def test_invalid_decrypt_or_update_after_verify(self):
+        cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+        ct = cipher.encrypt(self.data_128)
+        mac = cipher.digest()
+
+        for method_name in "decrypt", "update":
+            cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+            cipher.decrypt(ct)
+            cipher.verify(mac)
+            self.assertRaises(TypeError, getattr(cipher, method_name),
+                              self.data_128)
+
+            cipher = AES.new(self.key_128, AES.MODE_GCM, nonce=self.nonce_96)
+            cipher.decrypt_and_verify(ct, mac)
+            self.assertRaises(TypeError, getattr(cipher, method_name),
+                              self.data_128)
+
+
 # class TestVectors(unittest.TestCase):
 #     """Class exercising the GCM test vectors found in
 #        http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf"""

@@ -1,30 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Some utility functions for unittest2pytest.
-"""
-#
-# Copyright 2015-2019 by Hartmut Goebel <h.goebel@crazy-compilers.com>
-#
-# This file is part of unittest2pytest.
-#
-# unittest2pytest is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-# General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
-#
-
-__author__ = "Hartmut Goebel <h.goebel@crazy-compilers.com>"
-__copyright__ = "Copyright 2015-2019 by Hartmut Goebel"
-__licence__ = "GNU General Public License version 3 or later (GPLv3+)"
-
 import inspect
 
 try:
@@ -33,9 +7,121 @@ except ImportError:
     # Python 2
     pass
 from collections import OrderedDict
-
+from lib2to3.fixer_util import syms
+from lib2to3 import fixer_util
+import re
 
 class SelfMarker: pass
+
+
+def get_parent_of_type(node, node_type):
+    while node:
+        if node.type == node_type:
+            return node
+        node = node.parent
+
+
+def insert_import(import_stmt, nearest_parent_node, file_input):
+    """This inserts an import in a very similar way as
+    lib2to3.fixer_util.touch_import, but try to maintain encoding and shebang
+    prefixes on top of the file when there is no import
+
+    nearest_parent_node here is like the enclosing testcase
+
+    """
+    import_nodes = get_import_nodes(file_input)
+    if import_nodes:
+        last_import_stmt = import_nodes[-1].parent
+        i = file_input.children.index(last_import_stmt) + 1
+    # no import found, so add right before the test case
+    else:
+        i = file_input.children.index(nearest_parent_node)
+        import_stmt.prefix = nearest_parent_node.prefix
+        nearest_parent_node.prefix = ''
+    file_input.insert_child(i, import_stmt)
+
+
+def get_import_nodes(node):
+    return [
+        x for c in node.children for x in c.children
+        if c.type == syms.simple_stmt and fixer_util.is_import(x)
+    ]
+
+
+def is_import(module_name):
+    if fixer_util.is_import(module_name):
+        return True
+    # if its not,
+    import_name = str(module_name)
+    load_stmt = re.compile(r"load\((?:.+)?(@\w+)//(\w+)[,)]?")
+    mo = load_stmt.match(import_name)
+    if mo:
+        return True
+    return False
+    #
+    # fixer_util.Call(fixer_util.Name("load"), args=[
+    #     fixer_util.String(f"@{ns}//{import_name}, {import_name}")
+    # ])
+    #
+    # import_stmt = fixer_util.Node(syms.simple_stmt, [n, fixer_util.Newline()])
+    #
+    # # Check to see if we have already added this import.
+    # for c in file_input.children:
+    #     for x in c.children:
+    #         if (c.type == syms.simple_stmt and
+    #                 x.type == syms.power and
+    #                 x.parent == import_stmt):
+    #             # We have already added this import statement, so
+    #             # we do not need to add it again.
+    #             return
+
+
+def is_import_stmt(node):
+    return (node.type == syms.simple_stmt and
+            node.children and
+            is_import(node.children[0]))
+
+
+def touch_import(package, name, node):
+    """ Works like `does_tree_import` but adds an import statement
+        if it was not imported. """
+
+    root = fixer_util.find_root(node)
+
+    if fixer_util.does_tree_import(package, name, root):
+        return
+
+    # figure out where to insert the new import.  First try to find
+    # the first import and then skip to the last one.
+    insert_pos = offset = 0
+    for idx, node in enumerate(root.children):
+        if not is_import_stmt(node):
+            continue
+        for offset, node2 in enumerate(root.children[idx:]):
+            if not is_import_stmt(node2):
+                break
+        insert_pos = idx + offset
+        break
+
+    # if there are no imports where we can insert, find the docstring.
+    # if that also fails, we stick to the beginning of the file
+    if insert_pos == 0:
+        for idx, node in enumerate(root.children):
+            if (node.type == syms.simple_stmt and node.children and
+               node.children[0].type == token.STRING):
+                insert_pos = idx + 1
+                break
+
+    if package is None:
+        import_ = Node(syms.import_name, [
+            Leaf(token.NAME, "import"),
+            Leaf(token.NAME, name, prefix=" ")
+        ])
+    else:
+        import_ = FromImport(package, [Leaf(token.NAME, name, prefix=" ")])
+
+    children = [import_, Newline()]
+    root.insert_child(insert_pos, Node(syms.simple_stmt, children))
 
 
 def __apply_defaults(boundargs):

@@ -31,15 +31,43 @@ import unittest
 from functools import partial
 from lib2to3.fixer_base import BaseFix
 from lib2to3.fixer_util import (
-    Comma, Name, Call, Node, Leaf,
+    Comma, Name, Call, Node, Leaf, ArgList,
     Newline, KeywordArg, find_indentation,
     String, Number, syms, token,
     does_tree_import, is_import, parenthesize)
 
 from py2star import utils
 
-
 TEMPLATE_PATTERN = re.compile('[\1\2]|[^\1\2]+')
+
+
+def add_import(import_name, node, ns="stdlib"):
+    suite = utils.get_parent_of_type(node, syms.suite)
+    test_case = suite
+    while test_case.parent.type != syms.file_input:
+        test_case = test_case.parent
+    file_input = test_case.parent
+
+    if does_tree_import(None, import_name, node):
+        return
+
+    n = Call(Name("load"), args=[
+                String(f'"@{ns}//{import_name}"'),
+                Comma(),
+                String(f'"{import_name}"')
+        ])
+    import_stmt = Node(syms.simple_stmt, [n, Newline()])
+
+    # Check to see if we have already added this import.
+    for c in file_input.children:
+        for x in c.children:
+            if (c.type == syms.simple_stmt and
+                    x.type == syms.power and
+                    x.parent == import_stmt):
+                # We have already added this import statement, so
+                # we do not need to add it again.
+                return
+    utils.insert_import(import_stmt, test_case, file_input)
 
 
 def CompOp(op, left, right, kws):
@@ -68,7 +96,7 @@ def UnaryOp(prefix, postfix, value, kws):
 
 
 # These symbols have lower precedence than the CompOps we use and thus
-# need to be parenthesized. For datails see
+# need to be parenthesized. For details see
 # https://docs.python.org/3/reference/expressions.html#operator-precedence
 _NEEDS_PARENTHESIS = [
     syms.test,  # if – else
@@ -206,73 +234,24 @@ def RaisesRegexOp(context, designator, exceptionClass, expected_regex,
         return Node(syms.suite, [with_stmt])
 
 
-def add_import(import_name, node):
-    suite = get_parent_of_type(node, syms.suite)
-    test_case = suite
-    while test_case.parent.type != syms.file_input:
-        test_case = test_case.parent
-    file_input = test_case.parent
-
-    if not does_tree_import(None, import_name, node):
-        import_stmt = Node(syms.simple_stmt,
-                           [Node(syms.import_name, [Name('import'),
-                                                    Name(import_name,
-                                                         prefix=' ')]),
-                            Newline(),
-                            ])
-        insert_import(import_stmt, test_case, file_input)
-
-
-def get_parent_of_type(node, node_type):
-    while node:
-        if node.type == node_type:
-            return node
-        node = node.parent
-
-
-def insert_import(import_stmt, test_case, file_input):
-    """This inserts an import in a very similar way as
-    lib2to3.fixer_util.touch_import, but try to maintain encoding and shebang
-    prefixes on top of the file when there is no import"""
-    import_nodes = get_import_nodes(file_input)
-    if import_nodes:
-        last_import_stmt = import_nodes[-1].parent
-        i = file_input.children.index(last_import_stmt) + 1
-    # no import found, so add right before the test case
-    else:
-        i = file_input.children.index(test_case)
-        import_stmt.prefix = test_case.prefix
-        test_case.prefix = ''
-    file_input.insert_child(i, import_stmt)
-
-
-def get_import_nodes(node):
-    return [
-        x for c in node.children
-        for x in c.children
-        if c.type == syms.simple_stmt
-           and is_import(x)
-    ]
-
-
 _method_map = {
     # simple ones
-    'assertEqual': partial(CompOp, '=='),
+    'assertEqual': partial(CompOp, '=='),  # asserts.eq(A, B) || asserts.assert_that(A).is_equal_to(B)
     'assertNotEqual': partial(CompOp, '!='),
     'assertFalse': partial(UnaryOp, 'not', ''),
     'assertGreater': partial(CompOp, '>'),
     'assertGreaterEqual': partial(CompOp, '>='),
     'assertIn': partial(CompOp, 'in'),
-    'assertIs': partial(CompOp, 'is'),
-    'assertIsInstance': partial(DualOp, 'isinstance(\1, \2)'),
-    'assertIsNone': partial(UnaryOp, '', 'is None'),
-    'assertIsNot': partial(CompOp, 'is not'),
-    'assertIsNotNone': partial(UnaryOp, '', 'is not None'),
+    'assertIs': partial(CompOp, '=='),
+    'assertIsNone': partial(UnaryOp, '', '== None'),
+    'assertIsNot': partial(CompOp, '!='),
+    'assertIsNotNone': partial(UnaryOp, '', '!= None'),
     'assertLess': partial(CompOp, '<'),
     'assertLessEqual': partial(CompOp, '<='),
     'assertNotIn': partial(CompOp, 'not in'),
-    'assertNotIsInstance': partial(DualOp, 'not isinstance(\1, \2)'),
     'assertTrue': partial(UnaryOp, '', ''),
+    'assertIsInstance': partial(DualOp, 'isinstance(\1, \2)'),
+    'assertNotIsInstance': partial(DualOp, 'not isinstance(\1, \2)'),
 
     # types ones
     'assertDictEqual': partial(CompOp, '=='),
@@ -333,7 +312,7 @@ _method_aliases = {
 }
 
 for a, o in list(_method_aliases.items()):
-    if not o in _method_map:
+    if o not in _method_map:
         # if the original name is not a TestCase method, remove the alias
         del _method_aliases[a]
 
@@ -377,6 +356,8 @@ Node(power,
 
 
 class FixAsserts(BaseFix):
+    run_order = 2
+
     PATTERN = """
     power< 'self'
       trailer< '.' method=( %s ) >
@@ -476,5 +457,6 @@ class FixAsserts(BaseFix):
         if ('Regex' in method and not 'Raises' in method and
                 not 'Warns' in method):
             add_import('re', node)
+        add_import('asserts', node, ns="vendor")
 
         return n_stmt
