@@ -31,7 +31,8 @@ def test_rewrite():
     def rt(fixers, options=None, explicit=None):
         return refactor.RefactoringTool(fixers, options, explicit)
 
-    out = open("simple_class.py").read()
+    # out = open("simple_class.py").read()
+    out = open("sample_test.py").read()
     for f in _fixers:
         tool = rt([f])
         out = str(tool.refactor_string(out, "simple_class.py"))

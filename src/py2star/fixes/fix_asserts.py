@@ -34,6 +34,7 @@ from lib2to3.fixer_util import (
     Comma, Name, Call, Node, Leaf, ArgList,
     Newline, KeywordArg, find_indentation,
     String, Number, syms, token,
+    LParen, RParen, Attr,
     does_tree_import, is_import, parenthesize)
 
 from py2star import utils
@@ -71,14 +72,26 @@ def add_import(import_name, node, ns="stdlib"):
 
 
 def CompOp(op, left, right, kws):
-    op = Name(op, prefix=" ")
     left = parenthesize_expression(left)
     right = parenthesize_expression(right)
 
     left.prefix = ""
     if '\n' not in right.prefix:
-        right.prefix = " "
-    return Node(syms.comparison, (left, op, right), prefix=" ")
+        right.prefix = ""
+
+    # trailer< '.' 'assert_that' > trailer< '(' '1' ')' >
+    _left_asserts = Call(Name("assert_that"), args=[left])
+    new = Node(
+        syms.power,
+        # trailer< '.' 'is_equal_to' > trailer< '(' '2' ')' > >
+        Attr(_left_asserts, Name('is_equal_to')) +
+        [Node(syms.trailer,[LParen(), right, RParen()])]
+    )
+    return new
+
+    # Trailer('.', 'assert_that') Trailer(('(', '1', ')'), )
+    # return Node(syms.trailer, )
+    #return Node(syms.comparison, (left, op, right), prefix=" ")
 
 
 def UnaryOp(prefix, postfix, value, kws):
@@ -432,8 +445,11 @@ class FixAsserts(BaseFix):
                                          arglist=results['arglist'],
                                          node=node)
         else:
-            n_stmt = Node(syms.assert_stmt,
-                          [Name('assert'),
+            # n_stmt = Node(syms.assert_stmt,
+            #               [Name('assert'),
+            #                _method_map[method](*required_args, kws=argsdict)])
+            n_stmt = Node(syms.simple_stmt,
+                          [Name('asserts.'),
                            _method_map[method](*required_args, kws=argsdict)])
         if argsdict.get('msg', None) is not None:
             n_stmt.children.extend((Name(','), argsdict['msg']))

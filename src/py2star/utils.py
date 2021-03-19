@@ -11,6 +11,7 @@ from lib2to3.fixer_util import syms
 from lib2to3 import fixer_util
 import re
 
+
 class SelfMarker: pass
 
 
@@ -82,7 +83,7 @@ def is_import_stmt(node):
             is_import(node.children[0]))
 
 
-def touch_import(package, name, node):
+def add_import(package, name, node):
     """ Works like `does_tree_import` but adds an import statement
         if it was not imported. """
 
@@ -91,15 +92,18 @@ def touch_import(package, name, node):
     if fixer_util.does_tree_import(package, name, root):
         return
 
+    _seen_imports = set()
     # figure out where to insert the new import.  First try to find
     # the first import and then skip to the last one.
     insert_pos = offset = 0
     for idx, node in enumerate(root.children):
         if not is_import_stmt(node):
             continue
+        _seen_imports.add(str(node))
         for offset, node2 in enumerate(root.children[idx:]):
             if not is_import_stmt(node2):
                 break
+            _seen_imports.add(str(node2))
         insert_pos = idx + offset
         break
 
@@ -112,16 +116,25 @@ def touch_import(package, name, node):
                 insert_pos = idx + 1
                 break
 
+    ns = package
     if package is None:
-        import_ = Node(syms.import_name, [
-            Leaf(token.NAME, "import"),
-            Leaf(token.NAME, name, prefix=" ")
-        ])
-    else:
-        import_ = FromImport(package, [Leaf(token.NAME, name, prefix=" ")])
+        ns = "stdlib"
 
-    children = [import_, Newline()]
-    root.insert_child(insert_pos, Node(syms.simple_stmt, children))
+    import_ = fixer_util.Call(
+        fixer_util.Name("load"), args=[
+            fixer_util.String(f'"@{ns}//{name}"'),
+            fixer_util.Comma(),
+            fixer_util.String(f'"{name}"'),
+       ])
+
+    children = [import_, fixer_util.Newline()]
+    final_node = fixer_util.Node(syms.simple_stmt, children)
+
+    # if we've already imported this thing, skip
+    if str(final_node) in _seen_imports:
+        return
+
+    root.insert_child(insert_pos, final_node)
 
 
 def __apply_defaults(boundargs):

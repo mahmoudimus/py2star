@@ -26,12 +26,13 @@ class FixBytestring(fixer_base.BaseFix):
 
     def transform(self, node: pytree.Node, results: typing.Dict):
         if node.type == token.STRING:
-            if _literal_re.match(node.value):
-                # guaranteed to not throw exception, since we just matched
-                prefix = _literal_re.findall(node.value)[0]
-                _, _, new_value = node.value.rpartition(prefix)
-                new = node.clone()
-                new.value = 'builtins.bytes(' + new_value + ')'
-                new.parent = node.parent
-                fixer_util.touch_import(None, "builtins", new)
-                return new
+            if not _literal_re.match(node.value):
+                return
+            # guaranteed to not throw exception, since we just matched
+            prefix = _literal_re.findall(node.value)[0]
+            _, _, new_value = node.value.rpartition(prefix)
+            new = node.clone()
+            new.value = 'builtins.bytes(r' + new_value + ')'
+            new.parent = node.parent
+            utils.add_import(None, "builtins", new)
+            return new
