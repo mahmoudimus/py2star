@@ -1,18 +1,43 @@
-import logging
 import argparse
-import os
-import pathlib
-import pprint
+import ast
+import inspect
+import logging
+import string
 import sys
-import time
-from datetime import datetime, timedelta
+import textwrap
 
-
-print(sys.path)
+from py2star.asteez import functionz
 from py2star.tokenize_signature import find_definitions
 
-
 logger = logging.getLogger(__name__)
+
+
+class ArgparseHelper(argparse._HelpAction):
+    """
+    Used to help print top level '--help' arguments from argparse
+    when used with subparsers
+    Usage:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('-h', '--help', action=ArgparseHelper,
+                        help='show this help message and exit')
+    # add subparsers below these lines
+    """
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        parser.print_help()
+        print()
+
+        subparsers_actions = [
+            action
+            for action in parser._actions
+            if isinstance(action, argparse._SubParsersAction)
+        ]
+        for subparsers_action in subparsers_actions:
+            for choice, subparser in list(subparsers_action.choices.items()):
+                print("Command '{}'".format(choice))
+                print(subparser.format_usage())
+
+        parser.exit()
 
 
 def conf_logging():
@@ -38,27 +63,58 @@ def set_log_lvl(args, log_level=None):
     _log.setLevel(log_level)
 
 
-def _add_options(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
+def _add_common(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
     p.add_argument(
         "-l",
         "--log-level",
         default="info",
         help="Set the logging level",
-        choices=["debug", "info", "warn", "warning", "error", "critical"]
+        choices=["debug", "info", "warn", "warning", "error", "critical"],
     )
-    p.add_argument("filename")
     return p
 
 
 def execute(args: argparse.Namespace) -> None:
-    gen = find_definitions(args.filename)
-    for definition in gen:
-        print(definition.rstrip())
+    if args.command == "defs":
+        gen = find_definitions(args.filename)
+        for definition in gen:
+            print(definition.rstrip())
+    elif args.command == "tests":
+        tree = ast.parse(open(args.filename).read())
+        s = functionz.testsuite_generator(tree)
+        print(s)
+    elif args.command == "xxx":
+        pass
 
 
 def main():
-    parser = argparse.ArgumentParser(description="")
-    parser = _add_options(parser)
+    parser = argparse.ArgumentParser(description="", add_help=False)
+    parser.add_argument(
+        "-h",
+        "--help",
+        action=ArgparseHelper,
+        help="show this help message and exit",
+    )
+    subparsers = parser.add_subparsers(help="commands", dest="command")
+    parser = _add_common(parser)
+
+    # args here are applied to all sub commands using the `parents` parameter
+    base = argparse.ArgumentParser(add_help=False)
+
+    # subcommand 1, requires name of brother
+    defs = subparsers.add_parser(
+        "defs", help="function definitions", parents=[base]
+    )
+    defs.add_argument("filename")
+
+    # subcommand 2, requires name of sister and optionally mom
+    tests = subparsers.add_parser(
+        "tests",
+        help="Enumerate functions and dump to test suite",
+        parents=[base],
+    )
+    tests.add_argument("filename")
+
     args = parser.parse_args()
     set_log_lvl(args)
     logger.debug(args)

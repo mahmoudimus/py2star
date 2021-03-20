@@ -1,19 +1,14 @@
-import logging
-import os
-from argparse import Namespace
-from typing import TextIO
-
-import pytest
-
-from py2star import cli
-
-logger = logging.getLogger(__name__)
-
 import ast
 import itertools
+import logging
 
+from lib2to3 import refactor
 from py2star import rewriter
 from py2star import starify
+import pytest
+
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture()
@@ -23,8 +18,6 @@ def program() -> ast.Module:
 
 
 def test_rewrite():
-    import io
-    from lib2to3 import refactor, pygram, fixer_base
     _fixers = refactor.get_fixers_from_package("py2star.fixes")
     assert isinstance(_fixers, list) and len(_fixers) != 0
 
@@ -37,6 +30,7 @@ def test_rewrite():
         tool = rt([f])
         out = str(tool.refactor_string(out, "simple_class.py"))
     print(out)
+    return out
 
 
 def test_ast_visiting(program):
@@ -48,4 +42,3 @@ def test_ast_visiting(program):
 
 def test_starify(program):
     starify.starify(program)
-

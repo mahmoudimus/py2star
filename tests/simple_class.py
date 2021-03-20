@@ -32,3 +32,7 @@ class RewriteMe(TestCase):
 
     def test_doit(self):
         self.assertRegex("herpa", "her.*", "could not find herpa")
+
+    def test_fstring(self) -> str:
+        foo = 1
+        return f"{foo}"
