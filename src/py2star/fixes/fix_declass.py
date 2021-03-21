@@ -47,7 +47,7 @@ def dedent_suite(suite, dedent):
 
 
 class FixDeclass(BaseFix):
-
+    order = "pre"
     run_order = 7  # Fixers will be sorted by run order before execution
     # Lower numbers will be run first.
 

@@ -5,8 +5,17 @@ import logging
 import string
 import sys
 import textwrap
+from lib2to3 import refactor
 
-from py2star.asteez import functionz
+import astunparse
+from py2star import asteez
+from py2star.asteez import (
+    functionz,
+    remove_self,
+    rewrite_chained_comparisons,
+    rewrite_fstring,
+    rewrite_loopz,
+)
 from py2star.tokenizers import find_definitions
 
 logger = logging.getLogger(__name__)
@@ -74,6 +83,50 @@ def _add_common(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return p
 
 
+def onfixes(filename, fixers, doprint=True):
+    if not fixers:
+        _fixers = refactor.get_fixers_from_package("py2star.fixes")
+    else:
+        _fixers = [
+            i
+            for i in refactor.get_fixers_from_package("py2star.fixes")
+            for x in fixers
+            if i.endswith(x)
+        ]
+
+    with open(filename, "r") as f:
+        out = f.read()
+
+    for f in _fixers:
+        logger.debug("running fixer: %s", f)
+        # if not f.endswith("fix_asserts"):
+        #     continue
+        tool = refactor.RefactoringTool([f])
+        out = str(tool.refactor_string(out, "simple_class.py"))
+    if doprint:
+        print(out)
+    return out
+
+
+def larkify(filename, fixers, astrw):
+    out = onfixes(filename, fixers, doprint=False)
+    # TODO: dynamic
+    #  asteez.get_ast_rewriters_from_package("py2star.asteez")
+
+    program = ast.parse(out)
+    rewritten = program
+
+    for l in [
+        remove_self.FunctionParameterStripper(["self"]),
+        remove_self.AttributeGetter(["self"]),
+        rewrite_loopz.WhileToForLoop(),
+        functionz.GeneratorToFunction(),
+        rewrite_chained_comparisons.UnchainComparison(),
+    ]:
+        rewritten = l.visit(rewritten)
+    print(astunparse.unparse(rewritten))
+
+
 def execute(args: argparse.Namespace) -> None:
     if args.command == "defs":
         gen = find_definitions(args.filename)
@@ -83,8 +136,10 @@ def execute(args: argparse.Namespace) -> None:
         tree = ast.parse(open(args.filename).read())
         s = functionz.testsuite_generator(tree)
         print(s)
-    elif args.command == "xxx":
-        pass
+    elif args.command == "fixers":
+        onfixes(args.filename, fixers=args.fixers)
+    elif args.command == "larkify":
+        larkify(args.filename, fixers=args.fixers, astrw=args.asteez)
 
 
 def main():
@@ -122,6 +177,28 @@ def main():
         parents=[base],
     )
     fixpattern.add_argument("statement")
+
+    # subcommand 3 -- pattern finders
+    fixers = subparsers.add_parser(
+        "fixers",
+        help="fixer",
+        parents=[base],
+    )
+    fixers.add_argument("filename")
+    fixers.add_argument("--fixers", default=[], required=False, action="append")
+
+    larkify = subparsers.add_parser(
+        "larkify",
+        help="larkify",
+        parents=[base],
+    )
+    larkify.add_argument("filename")
+    larkify.add_argument(
+        "--fixers", default=[], required=False, action="append"
+    )
+    larkify.add_argument(
+        "--asteez", default=[], required=False, action="append"
+    )
 
     args = parser.parse_args()
     set_log_lvl(args)

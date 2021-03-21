@@ -16,6 +16,8 @@ _literal_re = re.compile(r"([rR]?[bBuU]|[bBuU][rR]?)[\'\"]")
 
 
 class FixBytestring(fixer_base.BaseFix):
+    order = "pre"
+    run_order = 1
     BM_compatible = True
     PATTERN = "STRING"
 

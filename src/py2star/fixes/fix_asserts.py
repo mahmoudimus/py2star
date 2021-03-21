@@ -523,6 +523,7 @@ for a, o in list(_method_aliases.items()):
 
 
 class FixAsserts(BaseFix):
+    order = "pre"
     run_order = 2
 
     PATTERN = """
