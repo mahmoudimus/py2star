@@ -1,12 +1,8 @@
 import ast
-import itertools
 import logging
-
 from lib2to3 import refactor
-from py2star import rewriter
-from py2star import starify
-import pytest
 
+import pytest
 
 logger = logging.getLogger(__name__)
 
@@ -24,21 +20,12 @@ def test_rewrite():
     def rt(fixers, options=None, explicit=None):
         return refactor.RefactoringTool(fixers, options, explicit)
 
-    # out = open("simple_class.py").read()
-    out = open("sample_test.py").read()
+    out = open("simple_class.py").read()
+    # out = open("sample_test.py").read()
     for f in _fixers:
+        if not f.endswith("fix_asserts"):
+            continue
         tool = rt([f])
         out = str(tool.refactor_string(out, "simple_class.py"))
     print(out)
     return out
-
-
-def test_ast_visiting(program):
-    visitor = rewriter.FunctionAndMethodVisitor()
-    visitor.visit(program)
-    for function in itertools.chain(visitor.functions, visitor.methods):
-        print(function.name)
-
-
-def test_starify(program):
-    starify.starify(program)

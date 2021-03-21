@@ -5,7 +5,12 @@ import astpretty
 import pytest
 import astunparse
 import libcst as cst
-from py2star.asteez import functionz, loopz, rewrite_fstring
+from py2star.asteez import (
+    functionz,
+    rewrite_chained_comparisons,
+    rewrite_fstring,
+    rewrite_loopz,
+)
 from py2star.asteez import remove_types
 from py2star.asteez import remove_self
 from libcst.codemod import CodemodContext
@@ -88,7 +93,7 @@ for _while_ in range(_WHILE_LOOP_EMULATION_ITERATION):
     # print(astunparse.unparse(ast.parse(expected)))
     sut = ast.parse(s)
     # d astpretty.pprint(sut)
-    w2f = loopz.WhileToForLoop()
+    w2f = rewrite_loopz.WhileToForLoop()
     rewritten = w2f.visit(sut)
     assert expected.strip() == astunparse.unparse(rewritten).strip()
 
@@ -107,3 +112,21 @@ c = range(12)
 x = [i for i in c]
 """
     assert expected == astunparse.unparse(rewritten)
+
+
+def test_unchain_comparison():
+    s = ast.parse(
+        """
+def compare(x, y):
+    if 1 < x <= y < 10:
+        return True
+"""
+    )
+    rwcc = rewrite_chained_comparisons.UnchainComparison()
+    rewritten = rwcc.visit(s)
+    expected = """
+def compare(x, y):
+    if ((1 < x) and (x <= y) and (y < 10)):
+        return True
+"""
+    assert expected.strip() == astunparse.unparse(rewritten).strip()

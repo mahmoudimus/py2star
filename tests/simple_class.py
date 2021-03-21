@@ -2,16 +2,17 @@ from unittest import TestCase
 import unittest
 
 
+def AES(key, mode, nonce=None):
+    print(key, mode, nonce)
+    raise ValueError(f"{key}, {mode}, {nonce}")
+
+
 class RewriteMe(TestCase):
-
-    def bar(self,
-            q,
-            w,
-            z):
+    def bar(self, q, w, z):
         # this does some stuff
-        return list(q, w, z)
+        return [q, w, z]
 
-    def bar(self, baz):
+    def xor(self, baz):
         # multi
         # line
         # comment
@@ -20,8 +21,8 @@ class RewriteMe(TestCase):
     def write(self):
         pass
 
-    def doit(self):
-        x = b'foo'
+    def do_it(self):
+        x = b"foo"
         return x
 
     def test_success(self):
@@ -36,3 +37,17 @@ class RewriteMe(TestCase):
     def test_fstring(self) -> str:
         foo = 1
         return f"{foo}"
+
+    def test_raises(self):
+        key_128 = 128
+        MODE_GCM = "gcm"
+        self.assertRaises(ValueError, AES, key_128, MODE_GCM, nonce=b"")
+
+    def test_bool(self):
+        v1, v2, v3, v4 = (0, 10, -9, 2 ** 10)
+        self.assertFalse(v1)
+        self.assertFalse(bool(v1))
+        self.failUnless(v2)
+        self.failUnless(bool(v2))
+        self.failUnless(v3)
+        self.failUnless(v4)

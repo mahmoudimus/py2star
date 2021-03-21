@@ -7,7 +7,7 @@ from os.path import splitext
 
 import setuptools
 
-VERSION_FILE = 'py2star/compat.py'
+VERSION_FILE = 'py2star/__init__.py'
 REQUIREMENTS = 'requirements.txt'
 TEST_REQUIREMENTS = 'test-requirements.txt'
 
@@ -73,7 +73,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages('src'),
     package_dir={'': 'src'},
-    py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
+    py_modules=[splitext(basename(path))[0] for path in glob('src/py2star/*.py')],
     include_package_data=True,
     zip_safe=False,
     platforms='any',

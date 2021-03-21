@@ -2,6 +2,7 @@ import ast
 import inspect
 import string
 import textwrap
+from typing import List, Union
 
 
 def testsuite_generator(tree):
@@ -45,6 +46,24 @@ class GeneratorToFunction(ast.NodeTransformer):
         ast.copy_location(new_node, node)
         ast.fix_missing_locations(new_node)
         return new_node
+
+
+def lambda_build(args: Union[str, List[str]], l_expr: ast.AST) -> ast.Lambda:
+    """
+    Given a named argument(s), and an expression, build a `Lambda` AST node.
+    Args:
+        args:       the string names of the arguments to the lambda. May be a list or a single name
+        l_expr:     An AST node that is the body of the lambda.
+    Returns:
+        The `Lambda` AST node.
+    """
+    if type(args) is str:
+        args = [args]
+
+    ast_args = ast.arguments(args=[ast.arg(arg=x) for x in args])
+    call_lambda = ast.Lambda(args=ast_args, body=l_expr)
+
+    return call_lambda
 
 
 class FunctionToGenerator(ast.NodeTransformer):

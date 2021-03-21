@@ -13,8 +13,8 @@ TOKENS_OF_INTEREST = (
 )
 
 
-def transform(string, in_def):
-    return string if in_def else string.replace('class', 'def')
+def _transform(string, in_def):
+    return string if in_def else string.replace("class", "def")
 
 
 # https://stackoverflow.com/a/38181014/133514
@@ -36,10 +36,10 @@ def _extract_definition(gen, tok):
     indent_level = 1
     # function or class definition, read until next colon outside
     # parentheses.
-    definition, last_line = [transform(tok.line, in_def)], tok.end[0]
+    definition, last_line = [_transform(tok.line, in_def)], tok.end[0]
     if in_def:
         # track indentation level so we can indent the docstring
-        indent_level += (tok.line.find('def') // 4)
+        indent_level += tok.line.find("def") // 4
     try:
         tok = _on_function_or_class(definition, gen, last_line, tok)
         # function stops ^
@@ -52,9 +52,7 @@ def _extract_definition(gen, tok):
         return definition
 
     definition.append(
-        textwrap.indent(
-            '"""\n' + ''.join(d) + '\n"""',
-            ' ' * 4 * indent_level)
+        textwrap.indent('"""\n' + "".join(d) + '\n"""', " " * 4 * indent_level)
     )
     return definition
 
@@ -66,10 +64,10 @@ def _on_comment_or_docstring(gen, tok):
     d = []
     while tok.exact_type in [token.COMMENT, token.STRING, token.NL]:
         d.append(
-            tok.string
-                .strip('"""')  # replace docstrings
-                .lstrip('#')  # replace comment
-                .strip('"'))
+            tok.string.strip('"""')  # replace docstrings
+            .lstrip("#")  # replace comment
+            .strip('"')
+        )
         tok = next(gen)
     return d
 
@@ -78,8 +76,9 @@ def _on_function_or_class(definition, gen, last_line, tok):
     parens = 0
     while tok.exact_type != token.COLON or parens > 0:
 
+        # this logic allows us to detect whether or not we
+        # are in a multi-line function signature
         if last_line != tok.end[0]:
-            logger.info("--> do i ever get here?")
             definition.append(tok.line)
             last_line = tok.end[0]
 

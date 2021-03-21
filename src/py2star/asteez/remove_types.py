@@ -1,8 +1,12 @@
 import libcst as cst
 from libcst import codemod
+from libcst.codemod import CodemodContext
 
 
 class RemoveTypesTransformer(codemod.VisitorBasedCodemodCommand):
+    def __init__(self, context=None):
+        context = context if context else CodemodContext()
+        super(RemoveTypesTransformer, self).__init__(context)
 
     DESCRIPTION = "Removes annotations."
 
