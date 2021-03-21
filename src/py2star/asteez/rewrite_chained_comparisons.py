@@ -1,5 +1,7 @@
 import ast
-from itertools import tee
+from itertools import chain, tee
+
+from birdseye import eye
 
 
 def pairwise(iterable):
@@ -23,21 +25,28 @@ class UnchainComparison(ast.NodeTransformer):
 
     """
 
+    @eye
     def visit_Compare(self, node):
         if not self._is_chained_compare(node):
             return node
 
         ands = []
-        for left, right, op in zip(pairwise(node.comparators), node.ops):
+        for (left, right), op in zip(
+            # returns (1, x), (x, y), (y, ..)..
+            pairwise(chain([node.left], node.comparators)),
+            node.ops,
+        ):
             item = ast.Compare(
                 left=left,
-                right=right,
+                comparators=[right],
                 ops=[op],
             )
             ands.append(item)
 
-        print(ands)  # join these d00ds with an AND
-        return node
+        new_node = ast.BoolOp(op=ast.And(), values=ands)
+        new_node = ast.copy_location(new_node, old_node=node)
+        new_node = ast.fix_missing_locations(new_node)
+        return new_node
 
     @staticmethod
     def _is_chained_compare(node):

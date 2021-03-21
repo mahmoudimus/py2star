@@ -7,7 +7,7 @@ import sys
 import textwrap
 
 from py2star.asteez import functionz
-from py2star.tokenize_signature import find_definitions
+from py2star.tokenizers import find_definitions
 
 logger = logging.getLogger(__name__)
 
@@ -101,19 +101,27 @@ def main():
     # args here are applied to all sub commands using the `parents` parameter
     base = argparse.ArgumentParser(add_help=False)
 
-    # subcommand 1, requires name of brother
+    # subcommand 1 -- function commands
     defs = subparsers.add_parser(
         "defs", help="function definitions", parents=[base]
     )
     defs.add_argument("filename")
 
-    # subcommand 2, requires name of sister and optionally mom
+    # subcommand 2 -- tests command
     tests = subparsers.add_parser(
         "tests",
         help="Enumerate functions and dump to test suite",
         parents=[base],
     )
     tests.add_argument("filename")
+
+    # subcommand 3 -- pattern finders
+    fixpattern = subparsers.add_parser(
+        "fixpattern",
+        help="Easily determine PATTERN for a new fix",
+        parents=[base],
+    )
+    fixpattern.add_argument("statement")
 
     args = parser.parse_args()
     set_log_lvl(args)

@@ -1,16 +1,9 @@
 import logging
-import os
-from argparse import Namespace
-from typing import TextIO
-
-import pytest
-
-from py2star import cli
 
 logger = logging.getLogger(__name__)
 
 
-from py2star.tokenize_signature import find_definitions
+from py2star.tokenizers import find_definitions
 
 
 def test_find_definitions():

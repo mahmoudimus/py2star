@@ -1,3 +1,9 @@
-pytest
-ipython
-ipdb
+pytest==6.2.2
+ipython==7.21.0
+ipdb==0.13.7
+# python debugging tools have gotten so much better @_@
+birdseye==0.8.4
+sqlalchemy==1.3.23  # pin this for birdseye until it supports 1.4
+viztracer==0.12.2
+pysnooper==0.4.3
+better_exceptions==0.3.3

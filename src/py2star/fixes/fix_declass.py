@@ -1,38 +1,30 @@
 from lib2to3.fixer_base import BaseFix
 from lib2to3.fixer_util import token, find_indentation
 
-"""
-Node(classdef, 
-     [Leaf(1, 'class'), 
-      Leaf(1, 'TestAssertEqual'), 
-      Leaf(7, '('), 
-      Leaf(1, 'TestCase'), 
-      Leaf(8, ')'), 
-      Leaf(11, ':'), 
-      Node(suite, [
-          Leaf(4, '\n'), 
-          Leaf(5, '    '), 
-          Node(funcdef, [
-              Leaf(1, 'def'), 
-              Leaf(1, 'test_you'), ...
-          ]), 
-          Leaf(6, '')])])
-"""
 
-
-def safe_dedent(s, dedent):
+def safe_dedent(prefix, dedent_len):
     """
     Dedent the prefix of a dedent token at the start of a line.
-    Non-syntactically meaningful newlines before tokens are appended to the prefix
-    of the following token, so this avoids removing the newline part of the prefix
-    when the token dedents to below the given level of indentation.
+
+    Non-syntactically meaningful newlines before tokens are appended to the
+     prefix of the following token.
+
+    This avoids removing the newline part of the prefix when the token
+    dedents to below the given level of indentation.
+
+    :param prefix:  prefix of a dedent token
+    :param dedent_len:
+    :return:
     """
-    for i, c in enumerate(s):
+    """
+
+    """
+    for i, c in enumerate(prefix):
         if c not in "\r\n":
             break
     else:
-        i = len(s)
-    return s[:i] + s[i:-dedent]
+        i = len(prefix)
+    return prefix[:i] + prefix[i:-dedent_len]
 
 
 def dedent_suite(suite, dedent):
@@ -56,8 +48,8 @@ def dedent_suite(suite, dedent):
 
 class FixDeclass(BaseFix):
 
-    run_order = 7   # Fixers will be sorted by run order before execution
-                    # Lower numbers will be run first.
+    run_order = 7  # Fixers will be sorted by run order before execution
+    # Lower numbers will be run first.
 
     PATTERN = """
       classdef< 'class' name=any ['(' 
@@ -67,21 +59,8 @@ class FixDeclass(BaseFix):
       >
     """
 
-    def dedent(self, suite, dedent):
-        self.line_num = suite.get_lineno()
-        for kid in suite.leaves():
-            if kid.type in (token.INDENT, token.DEDENT):
-                self.line_num = kid.get_lineno()
-                # todo: handle tabs
-                kid.value = kid.value[dedent:]
-                self.current_indent = kid.value
-            elif kid.get_lineno() != self.line_num:
-                # todo: handle tabs
-                if len(kid.prefix) > len(self.current_indent):
-                    kid.prefix = self.current_indent
-
     def transform(self, node, results):
-        suite = results['suite'].clone()
+        suite = results["suite"].clone()
         # todo: handle tabs
         dedent = len(find_indentation(suite)) - len(find_indentation(node))
         dedent_suite(suite, dedent)
