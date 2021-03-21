@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 fix_self_assert - lib2to3 fix for replacing assertXXX() method calls
-by their pytest equivalent.
+by their larky assertpy (assertion library for larky equivalent).
 """
 #
-# Copyright 2015-2019 by Hartmut Goebel <h.goebel@crazy-compilers.com>
+# Mostly inspired by Hartmut Goebel <h.goebel@crazy-compilers.com>
+# and the amazing project of unittest2pytest.
 #
-# This file is part of unittest2pytest.
-#
+# Obligatory license...
 # unittest2pytest is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
@@ -20,13 +20,8 @@ by their pytest equivalent.
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
-#
 
-__author__ = "Hartmut Goebel <h.goebel@crazy-compilers.com>"
-__copyright__ = "Copyright 2015-2019 by Hartmut Goebel"
-__licence__ = "GNU General Public License version 3 or later (GPLv3+)"
 
-import ast
 import binascii
 import re
 import unittest
@@ -34,29 +29,26 @@ import uuid
 from functools import partial
 from lib2to3.fixer_base import BaseFix
 from lib2to3.fixer_util import (
+    Attr,
+    Call,
     Comma,
     Dot,
-    Name,
-    Call,
-    Node,
+    LParen,
     Leaf,
-    ArgList,
+    Name,
     Newline,
-    KeywordArg,
-    find_indentation,
-    String,
+    Node,
     Number,
+    RParen,
+    String,
+    does_tree_import,
+    find_indentation,
     find_root,
+    parenthesize,
     syms,
     token,
-    LParen,
-    RParen,
-    Attr,
-    does_tree_import,
-    is_import,
-    parenthesize,
 )
-from typing import List, Union
+from typing import List
 
 from birdseye import eye
 from py2star import utils
@@ -138,32 +130,34 @@ def CompOp(op, left, right, kws):
 
 
 @eye
-def UnaryOp(attr, postfix, value, kws):
+def UnaryOp(prefix, postfix, value, kws):
     """
-    Converts a method like: `self.failUnless(True)` to
+    Converts a method like: ``self.failUnless(True)`` to
       asserts.assert_that(value).is_true()
 
-    Obviously the "attr" is the attribute.
-    attr	'is_true'
-    postfix	''
-    value	Leaf(1, 'v4')
-    kws	OrderedDict([('expr', Leaf(1, 'v4')), ('msg', None)])
+    Example:
+
+        unittest: ``self.failUnless(v4)``
+
+        pattern:
+
+          ``UnaryOp('is_true', '', Leaf(1, 'v4'),
+                    OrderedDict([('expr', Leaf(1, 'v4')), ('msg', None)]))``
+
+        Translates to ``assert_that(v4).is_true()``
+
     """
-    if attr or postfix:
+    if postfix:
         value = parenthesize_expression(value)
 
     kids = []
-    if attr:
-        _left_asserts = Call(Name("assert_that"), args=[value])
-        kids.append(_left_asserts)
-        kids.append(Attr(_left_asserts, Name(attr))[1])
-        kids.append(Node(syms.trailer, [LParen(), RParen()]))
+    left = Call(Name(prefix), args=[value])
+    kids.append(left)
 
-        # kids.append(Name(attr, prefix=" "))
-    # value.prefix = " "
-    # kids.append(value)
     if postfix:
-        kids.append(Name(postfix, prefix=" "))
+        _obj, node = Attr(left, Name(postfix))
+        kids.append(node)
+        kids.append(Node(syms.trailer, [LParen(), RParen()]))
     return Node(syms.power, kids)
 
 
@@ -469,12 +463,13 @@ _method_map = {
     "assertIsInstance": partial(CompOp, "is_instance_of"),
     "assertNotIsInstance": partial(CompOp, "is_not_instance_of"),
     # unary operations
-    "assertIsNone": partial(UnaryOp, "", "is_none"),
-    "assertFalse": partial(UnaryOp, "is_not_equal_to", ""),
-    "assertIsNotNone": partial(UnaryOp, "", "is_not_none"),
-    "assertTrue": partial(UnaryOp, "is_true", ""),
-    "failUnless": partial(UnaryOp, "is_true", ""),
-    "assert_": partial(UnaryOp, "is_true", ""),
+    "assertIsNone": partial(UnaryOp, "assert_that", "is_none"),
+    "assertIsNotNone": partial(UnaryOp, "assert_that", "is_not_none"),
+    "assertFalse": partial(UnaryOp, "assert_that", "is_false"),
+    "failIf": partial(UnaryOp, "assert_that", "is_false"),
+    "assertTrue": partial(UnaryOp, "assert_that", "is_true"),
+    "failUnless": partial(UnaryOp, "assert_that", "is_true"),
+    "assert_": partial(UnaryOp, "assert_that", "is_true"),
     # "exceptions" in larky do not exist but we have asserts.assert_fails...
     "assertRaises": partial(RaisesOp, "asserts"),
     "assertWarns": partial(RaisesOp, "asserts"),
