@@ -53,14 +53,17 @@ def test_remove_types(source_tree):
     print(rewritten.code)
 
 
-def test_remove_self(toplevel_functions):
-    tree = toplevel_functions
+def test_remove_self(source_tree):
+    context = CodemodContext()
+    tree = source_tree
     for l in [
-        remove_self.FunctionParameterStripper(["self"]),
-        remove_self.AttributeGetter(["self"]),
+        remove_self.FunctionParameterStripper(context, ["self"]),
+        remove_self.AttributeGetter(context, ["self"]),
     ]:
-        tree = l.visit(tree)
-    print(astunparse.unparse(tree))
+        tree = tree.visit(l)
+
+    # print(tree.code)
+    assert "self" not in tree.code
 
 
 def test_convert_while_loop():

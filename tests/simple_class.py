@@ -19,7 +19,7 @@ class RewriteMe(TestCase):
         pass
 
     def write(self):
-        pass
+        return self.__dict__.get("foo")
 
     def do_it(self):
         x = b"foo"
