@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import inspect
+from lib2to3.pgen2 import token
 
 try:
     from inspect import Parameter
@@ -132,3 +133,47 @@ def resolve_func_args(test_func, posargs, kwargs):
     required_args = [args[n] for n in required_args]
 
     return required_args, args
+
+
+def safe_dedent(prefix, dedent_len):
+    """
+    Dedent the prefix of a dedent token at the start of a line.
+
+    Non-syntactically meaningful newlines before tokens are appended to the
+     prefix of the following token.
+
+    This avoids removing the newline part of the prefix when the token
+    dedents to below the given level of indentation.
+
+    :param prefix:  prefix of a dedent token
+    :param dedent_len:
+    :return:
+    """
+    """
+
+    """
+    for i, c in enumerate(prefix):
+        if c not in "\r\n":
+            break
+    else:
+        i = len(prefix)
+    return prefix[:i] + prefix[i:-dedent_len]
+
+
+def dedent_suite(suite, dedent):
+    """Dedent a suite in-place."""
+    leaves = suite.leaves()
+    for leaf in leaves:
+        if leaf.type == token.NEWLINE:
+            leaf = next(leaves, None)
+            if leaf is None:
+                return
+            if leaf.type == token.INDENT:
+                leaf.value = leaf.value[:-dedent]
+            else:
+                # this prefix will start with any duplicate newlines
+                leaf.prefix = safe_dedent(leaf.prefix, dedent)
+        elif leaf.type == token.INDENT:
+            leaf.value = leaf.value[:-dedent]
+        elif leaf.prefix.startswith(("\r", "\n")):
+            leaf.prefix = leaf.prefix[:-dedent]

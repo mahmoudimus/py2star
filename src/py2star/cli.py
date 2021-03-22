@@ -1,19 +1,14 @@
 import argparse
 import ast
-import inspect
 import logging
-import string
 import sys
-import textwrap
 from lib2to3 import refactor
 
 import astunparse
-from py2star import asteez
 from py2star.asteez import (
     functionz,
     remove_self,
     rewrite_chained_comparisons,
-    rewrite_fstring,
     rewrite_loopz,
 )
 from py2star.tokenizers import find_definitions
