@@ -1,8 +1,3 @@
-from lib2to3.fixer_base import BaseFix
-from lib2to3.fixer_util import token, find_indentation
-
-from py2star.utils import dedent_suite
-
 from .fix_declass import FixDeclass
 
 
