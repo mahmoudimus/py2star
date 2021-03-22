@@ -102,19 +102,20 @@ for _while_ in range(_WHILE_LOOP_EMULATION_ITERATION):
 
 
 def test_generator_to_comprehension():
-    s = ast.parse(
+    context = CodemodContext()
+    tree = cst.parse_module(
         """
 c = range(12)
 x = (i for i in c)
-    """
+"""
     )
-    gf = functionz.GeneratorToFunction()
-    rewritten = gf.visit(s)
+    gf = functionz.GeneratorToFunction(context)
+    rewritten = tree.visit(gf)
     expected = """
 c = range(12)
 x = [i for i in c]
 """
-    assert expected == astunparse.unparse(rewritten)
+    assert expected == str(rewritten.code)
 
 
 def test_unchain_comparison():

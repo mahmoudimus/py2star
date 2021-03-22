@@ -1,8 +1,11 @@
-import ast
 import inspect
 import string
 import textwrap
-from typing import List, Union
+import typing
+
+import libcst as ast
+from libcst import codemod
+from libcst.codemod import CodemodContext
 
 
 def testsuite_generator(tree):
@@ -37,69 +40,16 @@ def testsuite_generator(tree):
     return s
 
 
-class GeneratorToFunction(ast.NodeTransformer):
-    def visit_GeneratorExp(self, node):
-        self.generic_visit(node)
-        new_node = ast.ListComp(node.elt, node.generators)
+class GeneratorToFunction(codemod.VisitorBasedCodemodCommand):
+    def __init__(self, context: CodemodContext):
+        super(GeneratorToFunction, self).__init__(context)
 
-        # Tie up loose ends in the AST.
-        ast.copy_location(new_node, node)
-        ast.fix_missing_locations(new_node)
-        return new_node
-
-
-def lambda_build(args: Union[str, List[str]], l_expr: ast.AST) -> ast.Lambda:
-    """
-    Given a named argument(s), and an expression, build a `Lambda` AST node.
-    Args:
-        args:       the string names of the arguments to the lambda. May be a list or a single name
-        l_expr:     An AST node that is the body of the lambda.
-    Returns:
-        The `Lambda` AST node.
-    """
-    if type(args) is str:
-        args = [args]
-
-    ast_args = ast.arguments(args=[ast.arg(arg=x) for x in args])
-    call_lambda = ast.Lambda(args=ast_args, body=l_expr)
-
-    return call_lambda
-
-
-class FunctionToGenerator(ast.NodeTransformer):
-    """
-    This subclass traverses the AST of the user-written, decorated,
-    model specification and transforms it into a generator for the
-    model. Subclassing in this way is the idiomatic way to transform
-    an AST.
-    Specifically:
-
-    1. Add `yield` keywords to all assignments
-       E.g. `x = tfd.Normal(0, 1)` -> `x = yield tfd.Normal(0, 1)`
-    2. Rename the model specification function to
-       `_pm_compiled_model_generator`. This is done out an abundance
-       of caution more than anything.
-    3. Remove the @Model decorator. Otherwise, we risk running into
-       an infinite recursion.
-    """
-
-    def visit_Assign(self, node):
-        new_node = node
-        new_node.value = ast.Yield(value=new_node.value)
-
-        # Tie up loose ends in the AST.
-        ast.copy_location(new_node, node)
-        ast.fix_missing_locations(new_node)
-        self.generic_visit(node)
-        return new_node
-
-    def visit_FunctionDef(self, node):
-        new_node = node
-        new_node.name = "_pm_compiled_model_generator"
-        new_node.decorator_list = []
-
-        # Tie up loose ends in the AST.
-        ast.copy_location(new_node, node)
-        ast.fix_missing_locations(new_node)
-        self.generic_visit(node)
-        return new_node
+    def leave_GeneratorExp(
+        self,
+        original_node: ast.GeneratorExp,
+        updated_node: ast.GeneratorExp,
+    ) -> typing.Union[ast.BaseList, ast.RemovalSentinel]:
+        return updated_node.deep_replace(
+            updated_node,
+            ast.ListComp(elt=updated_node.elt, for_in=updated_node.for_in),
+        )
