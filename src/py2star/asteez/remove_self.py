@@ -1,18 +1,27 @@
-import ast
+import libcst as ast
+from libcst import codemod
 
 
 def get_name(attribute_node):
+    if isinstance(attribute_node, str):
+        return attribute_node
     if isinstance(attribute_node, ast.Name):
         return attribute_node.id
     if isinstance(attribute_node, ast.Call):
         return get_name(attribute_node.func)
     if not hasattr(attribute_node, "value"):
         return attribute_node.id
-    return get_name(attribute_node.value) + "." + attribute_node.attr
+
+    if not hasattr(attribute_node, "attr"):
+        attr = str(attribute_node)
+    else:
+        attr = attribute_node.attr
+    return get_name(attribute_node.value) + "." + attr
 
 
-class AttributeRenamer(ast.NodeTransformer):
-    def __init__(self, substitutes):
+class AttributeRenamer(codemod.VisitorBasedCodemodCommand):
+    def __init__(self, context, substitutes):
+        super(AttributeRenamer, self).__init__(context)
         self.substitutes = substitutes
 
     def visit_Name(self, node):
