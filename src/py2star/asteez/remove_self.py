@@ -29,9 +29,8 @@ class FunctionParameterStripper(codemod.VisitorBasedCodemodCommand):
 
 
 class AttributeGetter(codemod.VisitorBasedCodemodCommand):
-    """
-    AttributeGetter(["self"]): self.foo => foo
-    """
+
+    DESCRIPTION = "AttributeGetter(ctx, ['self']): self.foo() => foo()"
 
     def __init__(self, context: CodemodContext, namespace: typing.List):
         super(AttributeGetter, self).__init__(context)
