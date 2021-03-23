@@ -70,7 +70,7 @@ def test_convert_while_loop():
     While loop converted to for loop because there's no while loops in starlark
     :return:
     """
-    s = ast.parse(
+    s = cst.parse_module(
         """
 pos = 0
 finish = 5
@@ -79,25 +79,27 @@ while pos <= finish:
     if not m:
         res += s[pos:]
         break    
+        
     """
     )
-    expected = """
+    expected = cst.parse_module(
+        """
 pos = 0
 finish = 5
 for _while_ in range(_WHILE_LOOP_EMULATION_ITERATION):
-    if (pos > finish):
+    if pos > finish:
         break
     m = self.search(s, pos)
-    if (not m):
+    if not m:
         res += s[pos:]
-        break     
+        break 
+            
     """
-    # print(astunparse.unparse(ast.parse(expected)))
-    sut = ast.parse(s)
-    # d astpretty.pprint(sut)
-    w2f = rewrite_loopz.WhileToForLoop()
-    rewritten = w2f.visit(sut)
-    assert expected.strip() == astunparse.unparse(rewritten).strip()
+    )
+    ctx = CodemodContext()
+    w2f = rewrite_loopz.WhileToForLoop(ctx)
+    rewritten = s.visit(w2f)
+    assert expected.code.strip() == rewritten.code.strip()
 
 
 def test_generator_to_comprehension():

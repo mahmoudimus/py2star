@@ -118,7 +118,7 @@ def larkify(filename, fixers, astrw):
     for l in [
         remove_self.FunctionParameterStripper(context, ["self"]),
         remove_self.AttributeGetter(context, ["self"]),
-        # rewrite_loopz.WhileToForLoop(),
+        rewrite_loopz.WhileToForLoop(context),
         functionz.GeneratorToFunction(context),
         rewrite_chained_comparisons.UnchainComparison(context),
     ]:
