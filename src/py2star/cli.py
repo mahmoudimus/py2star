@@ -1,19 +1,15 @@
 import argparse
 import ast
-import inspect
 import logging
-import string
 import sys
-import textwrap
 from lib2to3 import refactor
 
-import astunparse
-from py2star import asteez
+import libcst
+from libcst.codemod import CodemodContext
 from py2star.asteez import (
     functionz,
     remove_self,
     rewrite_chained_comparisons,
-    rewrite_fstring,
     rewrite_loopz,
 )
 from py2star.tokenizers import find_definitions
@@ -113,18 +109,20 @@ def larkify(filename, fixers, astrw):
     # TODO: dynamic
     #  asteez.get_ast_rewriters_from_package("py2star.asteez")
 
-    program = ast.parse(out)
+    context = CodemodContext()
+
+    program = libcst.parse_module(out)
     rewritten = program
 
     for l in [
-        remove_self.FunctionParameterStripper(["self"]),
-        remove_self.AttributeGetter(["self"]),
-        rewrite_loopz.WhileToForLoop(),
-        functionz.GeneratorToFunction(),
-        rewrite_chained_comparisons.UnchainComparison(),
+        remove_self.FunctionParameterStripper(context, ["self"]),
+        remove_self.AttributeGetter(context, ["self"]),
+        rewrite_loopz.WhileToForLoop(context),
+        functionz.GeneratorToFunction(context),
+        rewrite_chained_comparisons.UnchainComparison(context),
     ]:
-        rewritten = l.visit(rewritten)
-    print(astunparse.unparse(rewritten))
+        rewritten = rewritten.visit(l)
+    print(rewritten.code)
 
 
 def execute(args: argparse.Namespace) -> None:

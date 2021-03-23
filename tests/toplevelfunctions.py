@@ -8,6 +8,9 @@ def bar(q, w, z):
 
 
 def bar(baz):
+    # comment
+    # multi-line
+    # fix
     pass
 
 

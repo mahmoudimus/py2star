@@ -1,9 +1,4 @@
 astunparse==1.6.3
-# https://stackoverflow.com/a/54794506/133514
-astor@git+git://github.com/berkerpeksag/astor.git@master#egg=astor
-gast@git+git://github.com/serge-sans-paille/gast.git@master#egg=gast
 future==0.18.2
 lib3to6==202101.1045
 libcst==0.3.17
-asttokens==2.0.4
-astpretty==2.1.0
