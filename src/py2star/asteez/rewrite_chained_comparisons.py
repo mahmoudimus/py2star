@@ -1,7 +1,9 @@
-import ast
+import typing
+from functools import reduce
 from itertools import chain, tee
 
-from birdseye import eye
+import libcst as ast
+from libcst import codemod
 
 
 def pairwise(iterable):
@@ -11,7 +13,7 @@ def pairwise(iterable):
     return zip(a, b)
 
 
-class UnchainComparison(ast.NodeTransformer):
+class UnchainComparison(codemod.VisitorBasedCodemodCommand):
     """
     ChainedCompare
 
@@ -25,34 +27,47 @@ class UnchainComparison(ast.NodeTransformer):
 
     """
 
-    @eye
-    def visit_Compare(self, node):
-        if not self._is_chained_compare(node):
-            return node
+    def leave_Comparison(
+        self, original_node: ast.Comparison, updated_node: ast.Comparison
+    ) -> typing.Union[ast.BaseExpression, ast.RemovalSentinel]:
+        if not self._is_chained_compare(updated_node):
+            return updated_node
 
         ands = []
         for (left, right), op in zip(
             # returns (1, x), (x, y), (y, ..)..
-            pairwise(chain([node.left], node.comparators)),
-            node.ops,
+            pairwise(
+                chain(
+                    [updated_node.left],
+                    (c.comparator for c in updated_node.comparisons),
+                )
+            ),
+            (c.operator for c in updated_node.comparisons),
         ):
-            item = ast.Compare(
-                left=left,
-                comparators=[right],
-                ops=[op],
+            item = ast.Comparison(
+                left,
+                comparisons=[ast.ComparisonTarget(op, right)],
+                lpar=[ast.LeftParen()],
+                rpar=[ast.RightParen()],
             )
             ands.append(item)
 
-        new_node = ast.BoolOp(op=ast.And(), values=ands)
-        new_node = ast.copy_location(new_node, old_node=node)
-        new_node = ast.fix_missing_locations(new_node)
-        return new_node
+        def build_comparison_tree(left_node, right_node):
+            return ast.BooleanOperation(
+                left=left_node, operator=ast.And(), right=right_node
+            )
+
+        # noinspection PyTypeChecker
+        new_node: ast.BooleanOperation = reduce(
+            build_comparison_tree, ands[1:], ands[0]
+        )
+        return updated_node.deep_replace(updated_node, new_node)
 
     @staticmethod
-    def _is_chained_compare(node):
+    def _is_chained_compare(node: ast.Comparison):
         """
         Detects usage of a chained sequence of comparisons.
         Example:
             1 < x < y <= 5
         """
-        return len(node.ops) > 1
+        return len(node.comparisons) > 1

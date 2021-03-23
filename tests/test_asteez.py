@@ -1,20 +1,19 @@
-import logging
 import ast
+import logging
+from functools import reduce
 
-import astpretty
-import pytest
 import astunparse
 import libcst as cst
+import pytest
+from libcst.codemod import CodemodContext
 from py2star.asteez import (
     functionz,
+    remove_self,
+    remove_types,
     rewrite_chained_comparisons,
     rewrite_fstring,
     rewrite_loopz,
 )
-from py2star.asteez import remove_types
-from py2star.asteez import remove_self
-from libcst.codemod import CodemodContext
-from py2star.asteez.functionz import GeneratorToFunction
 
 logger = logging.getLogger(__name__)
 
@@ -119,18 +118,19 @@ x = [i for i in c]
 
 
 def test_unchain_comparison():
-    s = ast.parse(
+    context = CodemodContext()
+    tree = cst.parse_module(
         """
 def compare(x, y):
     if 1 < x <= y < 10:
         return True
 """
     )
-    rwcc = rewrite_chained_comparisons.UnchainComparison()
-    rewritten = rwcc.visit(s)
+    rwcc = rewrite_chained_comparisons.UnchainComparison(context)
+    rewritten = tree.visit(rwcc)
     expected = """
 def compare(x, y):
-    if ((1 < x) and (x <= y) and (y < 10)):
+    if (1 < x) and (x <= y) and (y < 10):
         return True
 """
-    assert expected.strip() == astunparse.unparse(rewritten).strip()
+    assert expected.strip() == rewritten.code.strip()

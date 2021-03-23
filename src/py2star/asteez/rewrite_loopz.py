@@ -2,20 +2,6 @@ import ast
 import sys
 
 
-def genIterateCollectionLoop(
-    listVar: ast.Attribute, iterVarName: str, yieldBody: ast.Attribute
-) -> ast.For:
-
-    res = ast.For(
-        target=ast.Name(id="_while_", ctx=ast.Store()),
-        iter=ast.comprehension(),
-        body=[ast.Expr(value=ast.Yield(value=yieldBody))],
-        orelse=[],
-        type_comment=None,
-    )
-    return res
-
-
 def invert(node):
 
     inverse = {
