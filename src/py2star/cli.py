@@ -4,7 +4,6 @@ import logging
 import sys
 from lib2to3 import refactor
 
-import astunparse
 import libcst
 from libcst.codemod import CodemodContext
 from py2star.asteez import (
