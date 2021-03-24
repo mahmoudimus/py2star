@@ -62,6 +62,9 @@ def set_log_lvl(args, log_level=None):
 
     if log_level is None:  # Not sure if log_level can be the number 0
         log_level = args.log_level.upper()
+        # make logging less verbose
+        logging.getLogger("lib2to3.main").setLevel(logging.WARN)
+        logging.getLogger("RefactoringTool").setLevel(logging.WARN)
     if isinstance(log_level, str):
         log_level = log_level.upper()  # check to make sure it is upper
         log_level = getattr(logging, log_level)
