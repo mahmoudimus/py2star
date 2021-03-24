@@ -46,7 +46,7 @@ def build_pattern(mapping=None):
     yield "power< bare_with_attr=(%s) trailer<'.' any > any* >" % bare_names
 
 
-class FixKnownimports(fixer_base.BaseFix):
+class FixKnownImports(fixer_base.BaseFix):
     BM_compatible = True
     keep_line_order = True
 
