@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 # Local imports
 from lib2to3 import fixer_base
-from lib2to3.fixer_base import BaseFix
-from lib2to3.fixer_util import BlankLine, Name, attr_chain, syms, token
+from lib2to3.fixer_util import BlankLine, Name, attr_chain
 
-from birdseye import eye
 from py2star import utils
 
 MAPPING = {
@@ -48,7 +46,7 @@ def build_pattern(mapping=None):
     yield "power< bare_with_attr=(%s) trailer<'.' any > any* >" % bare_names
 
 
-class FixImports(fixer_base.BaseFix):
+class FixKnownimports(fixer_base.BaseFix):
     BM_compatible = True
     keep_line_order = True
 
@@ -70,11 +68,11 @@ class FixImports(fixer_base.BaseFix):
         # We override this, so MAPPING can be pragmatically altered and the
         # changes will be reflected in PATTERN.
         self.PATTERN = self.build_pattern()
-        super(FixImports, self).compile_pattern()
+        super(FixKnownImports, self).compile_pattern()
 
     # Don't match the node if it's within another match.
     def match(self, node):
-        match = super(FixImports, self).match
+        match = super(FixKnownImports, self).match
         results = match(node)
         if not results:
             return False
@@ -87,9 +85,8 @@ class FixImports(fixer_base.BaseFix):
         return results
 
     def start_tree(self, tree, filename):
-        super(FixImports, self).start_tree(tree, filename)
+        super(FixKnownImports, self).start_tree(tree, filename)
 
-    @eye
     def transform(self, node, results):
         import_mod = results.get("module_name")
         if not import_mod:
