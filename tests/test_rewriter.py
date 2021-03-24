@@ -1,6 +1,7 @@
 import ast
 import logging
 from lib2to3 import refactor
+from textwrap import dedent
 
 import pytest
 
@@ -23,9 +24,9 @@ def test_rewrite():
     out = open("simple_class.py").read()
     # out = open("sample_test.py").read()
     for f in _fixers:
-        if not f.endswith("fix_asserts"):
+        if not f.endswith("fix_exceptions"):
             continue
         tool = rt([f])
-        out = str(tool.refactor_string(out, "simple_class.py"))
+        out = str(tool.refactor_string(dedent(out), "simple_class.py"))
     print(out)
     return out

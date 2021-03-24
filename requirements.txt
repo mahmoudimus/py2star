@@ -1,5 +1,7 @@
 astunparse==1.6.3
 future==0.18.2
 lib3to6==202101.1045
-libcst==0.3.17
 docformatter==1.4
+# libcst==0.3.17
+libcst@git+git://github.com/Instagram/LibCST.git@master#egg=libcst
+importanize@git+git://github.com/miki725/importanize.git@master#egg=importanize
