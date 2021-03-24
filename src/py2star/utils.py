@@ -7,7 +7,6 @@ try:
 except ImportError:
     # Python 2
     pass
-from collections import OrderedDict
 from lib2to3.fixer_util import syms
 from lib2to3 import fixer_util
 import re
