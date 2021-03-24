@@ -1,6 +1,6 @@
 import ast
 import logging
-from functools import reduce
+from textwrap import dedent
 
 import astunparse
 import libcst as cst
@@ -12,6 +12,7 @@ from py2star.asteez import (
     remove_types,
     rewrite_chained_comparisons,
     rewrite_fstring,
+    rewrite_imports,
     rewrite_loopz,
 )
 
@@ -136,3 +137,42 @@ def compare(x, y):
         return True
 """
     assert expected.strip() == rewritten.code.strip()
+
+
+def test_rewrite_imports():
+    sample = """
+    from __future__ import print_function
+    
+    import unittest
+    from binascii import unhexlify
+    
+    from Crypto.SelfTest.st_common import list_test_cases
+    from Crypto.SelfTest.loader import load_test_vectors, load_test_vectors_wycheproof
+    
+    from Crypto.Util.py3compat import tobytes, bchr
+    from Crypto.Cipher import AES
+    from Crypto.Hash import SHAKE128, SHA256
+    
+    from Crypto.Util.strxor import strxor
+    # load("@stdlib//unittest")
+    """
+    tree = cst.parse_module(dedent(sample))
+    wrapper = cst.metadata.MetadataWrapper(tree)
+    rwi = rewrite_imports.RewriteImports()
+    rewritten = wrapper.visit(rwi)
+    expected = """
+    load("@stdlib//unittest", unittest="unittest")
+    load("@stdlib//binascii", unhexlify="unhexlify")
+    
+    load("@vendor//Crypto/SelfTest/st_common", list_test_cases="list_test_cases")
+    load("@vendor//Crypto/SelfTest/loader", load_test_vectors="load_test_vectors", load_test_vectors_wycheproof="load_test_vectors_wycheproof")
+    
+    load("@vendor//Crypto/Util/py3compat", tobytes="tobytes", bchr="bchr")
+    load("@vendor//Crypto/Cipher", AES="AES")
+    load("@vendor//Crypto/Hash", SHAKE128="SHAKE128", SHA256="SHA256")
+    
+    load("@vendor//Crypto/Util/strxor", strxor="strxor")
+    # load("@stdlib//unittest")    
+"""
+    # print(rewritten.code.strip())
+    assert dedent(expected).strip() == dedent(rewritten.code).strip()

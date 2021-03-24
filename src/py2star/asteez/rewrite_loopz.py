@@ -1,9 +1,7 @@
-import libcst as ast
 import sys
-
 import typing
 
-from birdseye import eye
+import libcst as ast
 from libcst import codemod
 
 
@@ -41,7 +39,6 @@ def invert(node):
 
 
 class WhileToForLoop(codemod.VisitorBasedCodemodCommand):
-    @eye
     def leave_While(
         self, original_node: ast.While, updated_node: ast.While
     ) -> typing.Union[ast.BaseStatement, ast.RemovalSentinel]:

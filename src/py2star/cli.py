@@ -10,6 +10,7 @@ from py2star.asteez import (
     functionz,
     remove_self,
     rewrite_chained_comparisons,
+    rewrite_imports,
     rewrite_loopz,
 )
 from py2star.tokenizers import find_definitions
@@ -62,6 +63,9 @@ def set_log_lvl(args, log_level=None):
 
     if log_level is None:  # Not sure if log_level can be the number 0
         log_level = args.log_level.upper()
+        # make logging less verbose
+        logging.getLogger("lib2to3.main").setLevel(logging.WARN)
+        logging.getLogger("RefactoringTool").setLevel(logging.WARN)
     if isinstance(log_level, str):
         log_level = log_level.upper()  # check to make sure it is upper
         log_level = getattr(logging, log_level)
@@ -120,6 +124,7 @@ def larkify(filename, fixers, astrw):
         rewrite_loopz.WhileToForLoop(context),
         functionz.GeneratorToFunction(context),
         rewrite_chained_comparisons.UnchainComparison(context),
+        rewrite_imports.RewriteImports(),
     ]:
         rewritten = rewritten.visit(l)
     print(rewritten.code)

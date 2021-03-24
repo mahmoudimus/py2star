@@ -1,9 +1,10 @@
+import ast
 import inspect
 import string
 import textwrap
 import typing
 
-import libcst as ast
+import libcst as cst
 from libcst import codemod
 from libcst.codemod import CodemodContext
 
@@ -46,10 +47,10 @@ class GeneratorToFunction(codemod.VisitorBasedCodemodCommand):
 
     def leave_GeneratorExp(
         self,
-        original_node: ast.GeneratorExp,
-        updated_node: ast.GeneratorExp,
-    ) -> typing.Union[ast.BaseList, ast.RemovalSentinel]:
+        original_node: cst.GeneratorExp,
+        updated_node: cst.GeneratorExp,
+    ) -> typing.Union[cst.BaseList, cst.RemovalSentinel]:
         return updated_node.deep_replace(
             updated_node,
-            ast.ListComp(elt=updated_node.elt, for_in=updated_node.for_in),
+            cst.ListComp(elt=updated_node.elt, for_in=updated_node.for_in),
         )

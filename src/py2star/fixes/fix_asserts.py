@@ -50,7 +50,6 @@ from lib2to3.fixer_util import (
 )
 from typing import List
 
-from birdseye import eye
 from py2star import utils
 
 TEMPLATE_PATTERN = re.compile("[\1\2]|[^\1\2]+")
@@ -129,7 +128,6 @@ def CompOp(op, left, right, kws):
     return new
 
 
-@eye
 def UnaryOp(prefix, postfix, value, kws):
     """
     Converts a method like: ``self.failUnless(True)`` to
@@ -330,7 +328,6 @@ def get_lambdef_node(args, name=None):
     )
 
 
-@eye
 def RaisesOp(context, exceptionClass, indent, kws, arglist, node):
     # asserts.assert_fails(lambda: -1 in b("abc"), "int in bytes: -1 out of range")
     exceptionClass.prefix = ""
@@ -411,7 +408,6 @@ def RaisesOp(context, exceptionClass, indent, kws, arglist, node):
     # )
 
 
-@eye
 def RaisesRegexOp(
     context,
     designator,
