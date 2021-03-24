@@ -1,6 +1,12 @@
 # py2star
 Converts python files to starlark files
 
+## Get started quickly
+
+```bash
+python cli.py larkify ~/src/pycryptodome/lib/Crypto/SelfTest/PublicKey/test_RSA.py > test_RSA.star
+python cli.py tests test_RSA.star >> test_RSA.star
+```
 
 ## Differences with Python
 
