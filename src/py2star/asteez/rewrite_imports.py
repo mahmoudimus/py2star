@@ -140,6 +140,18 @@ class RewriteImports(cst.CSTTransformer):
         pkg = f'"@{ns}//{mod_name.replace(".", "/")}"'
 
         args = [cst.Arg(value=cst.SimpleString(pkg))]
+
+        try:
+            self._transpile_to_larky_load_function(args, updated_node)
+        except TypeError:
+            if type(updated_node.names) != cst.ImportStar:
+                raise
+
+        loadfunc = cst.Call(func=cst.Name(value="load"), args=args)
+        return cst.FlattenSentinel([cst.Expr(loadfunc)])
+
+    @staticmethod
+    def _transpile_to_larky_load_function(args, updated_node):
         for name in updated_node.names:
             asname = name.asname
             if asname is not None:
@@ -159,9 +171,7 @@ class RewriteImports(cst.CSTTransformer):
                     ),
                 )
             )
-
-        loadfunc = cst.Call(func=cst.Name(value="load"), args=args)
-        return cst.FlattenSentinel([cst.Expr(loadfunc)])
+        return args
 
     def leave_Import(
         self, original_node: cst.Import, updated_node: cst.Import
