@@ -10,6 +10,7 @@ from py2star.asteez import (
     functionz,
     remove_self,
     rewrite_chained_comparisons,
+    rewrite_imports,
     rewrite_loopz,
 )
 from py2star.tokenizers import find_definitions
@@ -123,6 +124,7 @@ def larkify(filename, fixers, astrw):
         rewrite_loopz.WhileToForLoop(context),
         functionz.GeneratorToFunction(context),
         rewrite_chained_comparisons.UnchainComparison(context),
+        rewrite_imports.RewriteImports(),
     ]:
         rewritten = rewritten.visit(l)
     print(rewritten.code)

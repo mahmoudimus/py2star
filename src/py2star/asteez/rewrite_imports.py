@@ -175,10 +175,10 @@ class RewriteImports(cst.CSTTransformer):
             return self.remove_future_imports(updated_node)
         return self.leave_import_alike(original_node, updated_node)
 
-    def leave_Call(
-        self, original_node: cst.Call, updated_node: cst.Call
-    ) -> cst.Call:
-        print(updated_node)
-        if m.matches(updated_node, m.Call(func=m.Name("load"))):
-            return self.leave_import_alike(original_node, updated_node)
-        return updated_node
+    # def leave_Call(
+    #     self, original_node: cst.Call, updated_node: cst.Call
+    # ) -> cst.Call:
+    #     print(updated_node)
+    #     if m.matches(updated_node, m.Call(func=m.Name("load"))):
+    #         return self.leave_import_alike(original_node, updated_node)
+    #     return updated_node
