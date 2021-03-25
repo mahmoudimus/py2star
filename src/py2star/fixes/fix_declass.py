@@ -5,13 +5,14 @@ from py2star.utils import dedent_suite
 
 
 class FixDeclass(BaseFix):
+    explicit = True
     order = "pre"
     run_order = 6  # Fixers will be sorted by run order before execution
     # Lower numbers will be run first.
 
     PATTERN = """
       classdef< 'class' name=any ['(' 
-           ('object')
+           ('object')*
       ')'] ':'
          suite=suite
       >

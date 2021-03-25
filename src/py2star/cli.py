@@ -13,6 +13,7 @@ from libcst.codemod import CodemodContext
 from py2star.asteez import (
     functionz,
     remove_self,
+    rewrite_class,
     rewrite_comparisons,
     rewrite_imports,
     rewrite_loopz,
@@ -151,6 +152,7 @@ def larkify(filename, fixers, astrw):
         rewrite_comparisons.UnchainComparison(context),
         rewrite_comparisons.IsComparisonTransformer(),
         rewrite_imports.RewriteImports(),
+        rewrite_class.ClassToFunctionRewriter(),
     ]:
         rewritten = rewritten.visit(l)
     print(rewritten.code)

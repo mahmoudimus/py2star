@@ -10,6 +10,7 @@ from py2star.asteez import (
     functionz,
     remove_self,
     remove_types,
+    rewrite_class,
     rewrite_comparisons,
     rewrite_fstring,
     rewrite_imports,
@@ -155,6 +156,24 @@ a = False
 a == False
 b = True
 b != False
+"""
+    assert expected.strip() == rewritten.code.strip()
+
+
+def test_class_to_function():
+    tree = cst.parse_module(
+        """
+class Foo(object):
+    def __init__(self):
+        pass
+"""
+    )
+    c2frw = rewrite_class.ClassToFunctionRewriter()
+    rewritten = tree.visit(c2frw)
+    expected = """
+def Foo():
+    def __init__(self):
+        pass
 """
     assert expected.strip() == rewritten.code.strip()
 

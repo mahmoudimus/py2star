@@ -19,8 +19,8 @@ from lib2to3.pgen2 import token
 
 
 class FixExceptions(fixer_base.BaseFix):
-    order = "post"
-    run_order = 7  # Fixers will be sorted by run order before execution
+    order = "pre"
+    run_order = 1  # Fixers will be sorted by run order before execution
     # Lower numbers will be run first.
 
     BM_compatible = True
