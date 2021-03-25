@@ -1,19 +1,24 @@
 import argparse
 import ast
+import io
 import logging
+import os
 import sys
+import tokenize
 from lib2to3 import refactor
+from tabnanny import errprint
 
 import libcst
 from libcst.codemod import CodemodContext
 from py2star.asteez import (
     functionz,
     remove_self,
-    rewrite_chained_comparisons,
+    rewrite_comparisons,
     rewrite_imports,
     rewrite_loopz,
 )
 from py2star.tokenizers import find_definitions
+from py2star.utils import ReIndenter
 
 logger = logging.getLogger(__name__)
 
@@ -94,15 +99,35 @@ def onfixes(filename, fixers, doprint=True):
             if i.endswith(x)
         ]
 
-    with open(filename, "r") as f:
-        out = f.read()
+    # with open(filename, "r") as f:
+    #     out = f.read()
+    with open(filename, "rb") as f:
+        try:
+            encoding, _ = tokenize.detect_encoding(f.readline)
+        except SyntaxError as se:
+            logger.exception("%s: SyntaxError: %s", filename, se)
+            return
+    try:
+        with open(filename, encoding=encoding) as f:
+            r = ReIndenter(f)
+    except IOError as msg:
+        logger.exception("%s: I/O Error: %s", filename, msg)
+        return
+
+    r.run()  # ensure spaces vs tabs
+
+    with io.StringIO() as o:
+        o.writelines(r.after)
+        o.flush()
+        out = o.getvalue()
 
     for f in _fixers:
         logger.debug("running fixer: %s", f)
         # if not f.endswith("fix_asserts"):
         #     continue
         tool = refactor.RefactoringTool([f])
-        out = str(tool.refactor_string(out, "simple_class.py"))
+        out = tool.refactor_string(out, "simple_class.py")
+        out = str(out)
     if doprint:
         print(out)
     return out
@@ -123,7 +148,8 @@ def larkify(filename, fixers, astrw):
         remove_self.AttributeGetter(context, ["self"]),
         rewrite_loopz.WhileToForLoop(context),
         functionz.GeneratorToFunction(context),
-        rewrite_chained_comparisons.UnchainComparison(context),
+        rewrite_comparisons.UnchainComparison(context),
+        rewrite_comparisons.IsComparisonTransformer(),
         rewrite_imports.RewriteImports(),
     ]:
         rewritten = rewritten.visit(l)
