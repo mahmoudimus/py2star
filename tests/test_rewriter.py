@@ -21,11 +21,11 @@ def test_rewrite():
     def rt(fixers, options=None, explicit=None):
         return refactor.RefactoringTool(fixers, options, explicit)
 
-    out = open("simple_class.py").read()
-    # out = open("sample_test.py").read()
+    # out = open("simple_class.py").read()
+    out = open("sample_test2.py").read()
     for f in _fixers:
-        if not f.endswith("fix_exceptions"):
-            continue
+        # if not f.endswith("fix_exceptions"):
+        #     continue
         tool = rt([f])
         out = str(tool.refactor_string(dedent(out), "simple_class.py"))
     print(out)

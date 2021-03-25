@@ -10,7 +10,7 @@ from py2star.asteez import (
     functionz,
     remove_self,
     remove_types,
-    rewrite_chained_comparisons,
+    rewrite_comparisons,
     rewrite_fstring,
     rewrite_imports,
     rewrite_loopz,
@@ -129,12 +129,32 @@ def compare(x, y):
         return True
 """
     )
-    rwcc = rewrite_chained_comparisons.UnchainComparison(context)
+    rwcc = rewrite_comparisons.UnchainComparison(context)
     rewritten = tree.visit(rwcc)
     expected = """
 def compare(x, y):
     if (1 < x) and (x <= y) and (y < 10):
         return True
+"""
+    assert expected.strip() == rewritten.code.strip()
+
+
+def test_is_comparison_transformer():
+    tree = cst.parse_module(
+        """
+a = False
+a is False
+b = True
+b is not False
+"""
+    )
+    rwcc = rewrite_comparisons.IsComparisonTransformer()
+    rewritten = tree.visit(rwcc)
+    expected = """
+a = False
+a == False
+b = True
+b != False
 """
     assert expected.strip() == rewritten.code.strip()
 

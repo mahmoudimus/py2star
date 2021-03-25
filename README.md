@@ -37,11 +37,12 @@ The list of differences between Starlark and Python are documented at https://ba
 - [x] Chained comparisons (e.g. 1 < x < 5)`.
 - [x] `class` (see `larky.struct` function). 
 - [x] `import` (see `load` statement).
-- [x] `while`
+- [x] `while`.
 - [x] `generators` and `generator expressions`.
-- [ ] `is` (use `==` instead).
-- [ ] `try`, `raise`, `except`, `finally` (see `fail` for fatal errors).
-- [ ] `yield`
+- [x] `is` and `is not` (use `==`  and `!=` instead, respectively).
+- [x] `raise` (see `fail` for fatal errors).  
+- [ ] `try`, `except`, `finally`. (see `fail` for fatal errors).
+- [ ] `yield`.
 - [ ] `global`, `nonlocal`.
 
 
