@@ -13,7 +13,7 @@ def testsuite_generator(tree):
     all_functions = [
         node.name
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+        if isinstance(node, ast.FunctionDef) and "test" in node.name
     ]
 
     test_cases = textwrap.indent(
