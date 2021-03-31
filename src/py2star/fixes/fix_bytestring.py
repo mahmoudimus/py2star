@@ -32,7 +32,41 @@ class FixBytestring(fixer_base.BaseFix):
         prefix = _literal_re.findall(node.value)[0]
         _, _, new_value = node.value.rpartition(prefix)
         new = node.clone()
-        new.value = "builtins.bytes(r" + new_value + ", encoding='utf-8')"
+        values = []
+        current = None
+        actual = []
+        for x in new_value:
+            i = x
+            if not isinstance(i, int):
+                i = ord(x)
+            # print("---> ", x, i)
+            if x == '"':  # skip enclosing quotes
+                continue
+            if isinstance(i, int) and str.isascii(chr(i)):
+                if current is None:
+                    current = []
+                else:
+                    values.append(current)  # set in values, then clear current
+                    current = []
+                current.append(chr(i))
+            else:
+                if current is None:
+                    current = []
+                else:
+                    values.append(
+                        'bytes(r"' + "".join(current) + '", encoding="utf-8")'
+                    )
+                    current = []
+                current.append(format(i, "02x"))
+
+            actual.append(format(i, "02x"))
+
+        # print(values)
+        # new.value = "builtins.bytes(r" + new_value + ", encoding='utf-8')"
+        if len(actual) > 0:
+            new.value = "bytes([" + "0x" + ", 0x".join(actual) + "])"
+        else:
+            new.value = "bytes(r" + new_value + ", encoding='utf-8')"
         new.parent = node.parent
         utils.add_larky_import(None, "builtins", new)
         return new

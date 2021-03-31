@@ -25,6 +25,14 @@ class RewriteMe(TestCase):
         x = b"foo"
         return x
 
+    def do_it2(self):
+        x = b"fxxx\x80"
+        return x
+
+    def do_it3(self):
+        x = b"\x01\x00\x10\x80"
+        return x
+
     def test_success(self):
         self.assertEqual(1, 1)
 
