@@ -1,5 +1,6 @@
 from lib2to3.fixer_base import BaseFix
 from lib2to3.fixer_util import token, find_indentation
+from lib2to3 import pygram
 
 from py2star.utils import dedent_suite
 
@@ -20,6 +21,7 @@ class FixDeclass(BaseFix):
 
     def transform(self, node, results):
         suite = results["suite"].clone()
+        name = results["name"]
         # todo: handle tabs
         dedent = len(find_indentation(suite)) - len(find_indentation(node))
         dedent_suite(suite, dedent)
@@ -31,5 +33,11 @@ class FixDeclass(BaseFix):
                 del suite.children[0]
             else:
                 first.value = first.value[1:]
-
+        # function def becomes class_function def
+        # i.e. class RewriteMe def test_raises
+        #  === RewriteMe_test_raises
+        for i in suite.children:
+            if i.type == pygram.python_symbols.funcdef:
+                n = f"{results['name']}_{i.children[1].value}".strip()
+                i.children[1].value = n
         return suite

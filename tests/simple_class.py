@@ -33,6 +33,10 @@ class RewriteMe(TestCase):
         x = b"\x01\x00\x10\x80"
         return x
 
+    def do_it4(self):
+        x = b"fo0\x7F"
+        return x
+
     def test_success(self):
         self.assertEqual(1, 1)
 

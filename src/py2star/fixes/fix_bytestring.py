@@ -6,6 +6,7 @@ bytes(r'...', encoding='utf-8')
 """
 import re
 import typing
+import ast
 from lib2to3 import fixer_base, pytree
 from lib2to3.pgen2 import token
 
@@ -32,34 +33,39 @@ class FixBytestring(fixer_base.BaseFix):
         prefix = _literal_re.findall(node.value)[0]
         _, _, new_value = node.value.rpartition(prefix)
         new = node.clone()
-        values = []
-        current = None
-        actual = []
-        for x in new_value:
-            i = x
-            if not isinstance(i, int):
-                i = ord(x)
-            # print("---> ", x, i)
-            if x == '"':  # skip enclosing quotes
-                continue
-            if isinstance(i, int) and str.isascii(chr(i)):
-                if current is None:
-                    current = []
-                else:
-                    values.append(current)  # set in values, then clear current
-                    current = []
-                current.append(chr(i))
-            else:
-                if current is None:
-                    current = []
-                else:
-                    values.append(
-                        'bytes(r"' + "".join(current) + '", encoding="utf-8")'
-                    )
-                    current = []
-                current.append(format(i, "02x"))
-
-            actual.append(format(i, "02x"))
+        actual = [
+            format(x, "02x")
+            for x in ast.literal_eval(node.value)
+            if x not in (ord('"'), ord("'"))
+        ]
+        # values = []
+        # current = None
+        # actual = []
+        # for x in new_value:
+        #     i = x
+        #     if not isinstance(i, int):
+        #         i = ord(x)
+        #     # print("---> ", x, i)
+        #     if x == '"':  # skip enclosing quotes
+        #         continue
+        #     if isinstance(i, int) and str.isascii(chr(i)):
+        #         if current is None:
+        #             current = []
+        #         else:
+        #             values.append(current)  # set in values, then clear current
+        #             current = []
+        #         current.append(chr(i))
+        #     else:
+        #         if current is None:
+        #             current = []
+        #         else:
+        #             values.append(
+        #                 'bytes(r"' + "".join(current) + '", encoding="utf-8")'
+        #             )
+        #             current = []
+        #         current.append(format(i, "02x"))
+        #
+        #     actual.append(format(i, "02x"))
 
         # print(values)
         # new.value = "builtins.bytes(r" + new_value + ", encoding='utf-8')"
