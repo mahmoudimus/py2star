@@ -174,8 +174,8 @@ class Bar(object):
 class Complicated(object):
     def __init__(self, x, y, z):
         pass
-    
-    def foo(self one, two):
+
+    def foo(self, one, two):
         pass
 """
     )
@@ -186,30 +186,26 @@ class Complicated(object):
 def Foo():
     def __init__():
         pass
-    self = __init__()
-    
-    return self
-    
+
 def Bar(var, value):
     def __init__(var, value):
         pass
-    self = __init__(var, value)
-    
-    return self
-    
+
 def Complicated(x, y, z):
     def __init__(x, y, z):
         pass
-    self = __init__(x, y, z)
-    
+
     def foo(one, two):
         pass
-    self.foo = foo
-    
-    return self
 """
     # using split() avoids having to trim trailing whitespace.
-    assert expected.split() == rewritten.code.split()
+    assert _remove_empty_lines(expected) == _remove_empty_lines(rewritten.code)
+
+
+def _remove_empty_lines(mystr):
+    # "".join([s for s in t.strip().splitlines(True)
+    #         if s.strip("\r\n").strip()])
+    return [line for line in mystr.split("\n") if line.strip() != ""]
 
 
 def test_rewrite_imports():
