@@ -180,26 +180,37 @@ class Complicated(object):
 """
     )
     # TODO: try Complicated() instead of Complicated(object)
+    # TODO: try __init__(var=val) to see how it works?
     c2frw = rewrite_class.ClassToFunctionRewriter()
     rewritten = tree.visit(c2frw)
     expected = """
 def Foo():
     def __init__():
         pass
+    self = __init__()
+
+    return self
 
 def Bar(var, value):
     def __init__(var, value):
         pass
+    self = __init__(var, value)
+
+    return self
 
 def Complicated(x, y, z):
     def __init__(x, y, z):
         pass
+    self = __init__(x, y, z)
 
     def foo(one, two):
         pass
+    self.foo = foo
+
+    return self
 """
     # using split() avoids having to trim trailing whitespace.
-    assert _remove_empty_lines(expected) == _remove_empty_lines(rewritten.code)
+    assert _remove_empty_lines(rewritten.code) == _remove_empty_lines(expected)
 
 
 def _remove_empty_lines(mystr):
