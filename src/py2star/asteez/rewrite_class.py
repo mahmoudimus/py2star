@@ -42,6 +42,9 @@ class ClassToFunctionRewriter(cst.CSTTransformer):
                 updated_node.params, [m.Name("self")]
             )
 
+        stripper = FunctionParameterStripper(CodemodContext(), ["self"])
+        updated_node = updated_node.visit(stripper)
+
         return updated_node.with_changes(
             name=self.namespace_function_name(updated_node)
         )
