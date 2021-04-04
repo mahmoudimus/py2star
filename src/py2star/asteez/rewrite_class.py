@@ -49,14 +49,17 @@ class ClassToFunctionRewriter(cst.CSTTransformer):
             # init is a special case
             # TODO: __new__ and metaclasses? not supported for now.
             self.init_params = updated_node.params
+            params = self._remove_default_values(updated_node.params)
             self_func_assign = self._emulate_class_construction(updated_node)
         else:
+            params = updated_node.params
             self_func_assign = self._assign_func_to_self(updated_node)
 
         return cst.FlattenSentinel(
             [
                 updated_node.with_changes(
-                    name=self._namespace_function_name(updated_node)
+                    name=self._namespace_function_name(updated_node),
+                    params=params,
                 ),
                 cst.SimpleStatementLine(body=[self_func_assign]),
             ]
@@ -183,6 +186,16 @@ class ClassToFunctionRewriter(cst.CSTTransformer):
             footer=block.footer,
             header=block.header,
         )
+
+    @staticmethod
+    def _remove_default_values(params: cst.Parameters):
+        updated = []
+        for p in params.params:
+            # if there's a default value for a parameter, remove it.
+            if p.default is not None and p.equal != cst.MaybeSentinel:
+                p = p.with_changes(default=None, equal=cst.MaybeSentinel)
+            updated.append(p)
+        return cst.Parameters(updated)
 
 
 class FunctionParameterStripper(codemod.VisitorBasedCodemodCommand):

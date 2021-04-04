@@ -147,8 +147,9 @@ def larkify(filename, fixers, astrw):
     rewritten = program
 
     for l in [
-        rewrite_class.FunctionParameterStripper(context, ["self"]),
-        rewrite_class.AttributeGetter(context, ["self"]),
+        # disable this since we already do these in ClassToFunction
+        # rewrite_class.FunctionParameterStripper(context, ["self"]),
+        # rewrite_class.AttributeGetter(context, ["self"]),
         rewrite_class.ClassToFunctionRewriter(),
         rewrite_loopz.WhileToForLoop(context),
         functionz.GeneratorToFunction(context),

@@ -171,16 +171,14 @@ class Bar(object):
     def __init__(self, var, value):
         pass
 
-class Complicated(object):
-    def __init__(self, x, y, z):
+class Complicated():
+    def __init__(self, x, y, z=1):
         pass
 
-    def foo(self, one, two):
+    def foo(self, one, two=2):
         pass
 """
     )
-    # TODO: try Complicated() instead of Complicated(object)
-    # TODO: try __init__(var=val) to see how it works?
     c2frw = rewrite_class.ClassToFunctionRewriter()
     rewritten = tree.visit(c2frw)
     expected = """
@@ -198,12 +196,12 @@ def Bar(var, value):
 
     return self
 
-def Complicated(x, y, z):
+def Complicated(x, y, z=1):
     def __init__(x, y, z):
         pass
     self = __init__(x, y, z)
 
-    def foo(one, two):
+    def foo(one, two=2):
         pass
     self.foo = foo
 
