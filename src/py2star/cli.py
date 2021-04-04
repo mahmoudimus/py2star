@@ -9,6 +9,8 @@ from lib2to3 import refactor
 from tabnanny import errprint
 
 import libcst
+import py2star.asteez.remove_class
+import py2star.asteez.rewrite_class
 from libcst.codemod import CodemodContext
 from py2star.asteez import (
     functionz,
@@ -145,14 +147,14 @@ def larkify(filename, fixers, astrw):
     rewritten = program
 
     for l in [
-        remove_self.FunctionParameterStripper(context, ["self"]),
-        remove_self.AttributeGetter(context, ["self"]),
+        rewrite_class.FunctionParameterStripper(context, ["self"]),
+        rewrite_class.AttributeGetter(context, ["self"]),
+        rewrite_class.ClassToFunctionRewriter(),
         rewrite_loopz.WhileToForLoop(context),
         functionz.GeneratorToFunction(context),
         rewrite_comparisons.UnchainComparison(context),
         rewrite_comparisons.IsComparisonTransformer(),
         rewrite_imports.RewriteImports(),
-        rewrite_class.ClassToFunctionRewriter(),
     ]:
         rewritten = rewritten.visit(l)
     print(rewritten.code)

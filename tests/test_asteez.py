@@ -1,5 +1,6 @@
 import ast
 import logging
+import pprint
 from textwrap import dedent
 
 import astunparse
@@ -8,7 +9,6 @@ import pytest
 from libcst.codemod import CodemodContext
 from py2star.asteez import (
     functionz,
-    remove_self,
     remove_types,
     rewrite_class,
     rewrite_comparisons,
@@ -58,8 +58,8 @@ def test_remove_self(source_tree):
     context = CodemodContext()
     tree = source_tree
     for l in [
-        remove_self.FunctionParameterStripper(context, ["self"]),
-        remove_self.AttributeGetter(context, ["self"]),
+        rewrite_class.FunctionParameterStripper(context, ["self"]),
+        rewrite_class.AttributeGetter(context, ["self"]),
     ]:
         tree = tree.visit(l)
 
@@ -166,16 +166,50 @@ def test_class_to_function():
 class Foo(object):
     def __init__(self):
         pass
+
+class Bar(object):
+    def __init__(self, var, value):
+        pass
+
+class Complicated(object):
+    def __init__(self, x, y, z):
+        pass
+    
+    def foo(self one, two):
+        pass
 """
     )
+    # TODO: try Complicated() instead of Complicated(object)
     c2frw = rewrite_class.ClassToFunctionRewriter()
     rewritten = tree.visit(c2frw)
     expected = """
 def Foo():
-    def __init__(self):
+    def __init__():
         pass
+    self = __init__()
+    
+    return self
+    
+def Bar(var, value):
+    def __init__(var, value):
+        pass
+    self = __init__(var, value)
+    
+    return self
+    
+def Complicated(x, y, z):
+    def __init__(x, y, z):
+        pass
+    self = __init__(x, y, z)
+    
+    def foo(one, two):
+        pass
+    self.foo = foo
+    
+    return self
 """
-    assert expected.strip() == rewritten.code.strip()
+    # using split() avoids having to trim trailing whitespace.
+    assert expected.split() == rewritten.code.split()
 
 
 def test_rewrite_imports():
