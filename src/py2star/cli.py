@@ -2,19 +2,14 @@ import argparse
 import ast
 import io
 import logging
-import os
 import sys
 import tokenize
 from lib2to3 import refactor
-from tabnanny import errprint
 
 import libcst
-import py2star.asteez.remove_class
-import py2star.asteez.rewrite_class
 from libcst.codemod import CodemodContext
 from py2star.asteez import (
     functionz,
-    remove_self,
     rewrite_class,
     rewrite_comparisons,
     rewrite_imports,
