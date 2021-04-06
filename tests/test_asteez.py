@@ -177,9 +177,14 @@ class Complicated():
 
     def foo(self, one, two=2):
         pass
+
+    @staticmethod
+    def doit(a, b):
+        pass
 """
     )
-    c2frw = rewrite_class.ClassToFunctionRewriter()
+    context = CodemodContext()
+    c2frw = rewrite_class.ClassToFunctionRewriter(context)
     rewritten = tree.visit(c2frw)
     expected = """
 def Foo():
@@ -204,6 +209,10 @@ def Complicated(x, y, z=1):
     def foo(one, two=2):
         pass
     self.foo = foo
+    
+    def doit(a, b):
+        pass
+    self.doit = doit
 
     return self
 """

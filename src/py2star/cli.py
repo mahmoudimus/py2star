@@ -131,7 +131,8 @@ def onfixes(filename, fixers, doprint=True):
     return out
 
 
-def larkify(filename, fixers, astrw):
+def larkify(filename, args):
+    fixers = args.fixers
     out = onfixes(filename, fixers, doprint=False)
     # TODO: dynamic
     #  asteez.get_ast_rewriters_from_package("py2star.asteez")
@@ -141,17 +142,24 @@ def larkify(filename, fixers, astrw):
     program = libcst.parse_module(out)
     rewritten = program
 
-    for l in [
-        # disable this since we already do these in ClassToFunction
-        # rewrite_class.FunctionParameterStripper(context, ["self"]),
-        # rewrite_class.AttributeGetter(context, ["self"]),
-        rewrite_class.ClassToFunctionRewriter(),
+    transformers = []
+    if args.for_tests:
+        transformers += [
+            rewrite_class.FunctionParameterStripper(context, ["self"]),
+            rewrite_class.AttributeGetter(context, ["self"]),
+        ]
+    else:
+        # we don't want class to function rewriter for tests since
+        # there's already a fixer for tests based on lib2to3
+        transformers.append(rewrite_class.ClassToFunctionRewriter(context))
+    transformers += [
         rewrite_loopz.WhileToForLoop(context),
         functionz.GeneratorToFunction(context),
         rewrite_comparisons.UnchainComparison(context),
         rewrite_comparisons.IsComparisonTransformer(),
         rewrite_imports.RewriteImports(),
-    ]:
+    ]
+    for l in transformers:
         rewritten = rewritten.visit(l)
     print(rewritten.code)
 
@@ -168,7 +176,7 @@ def execute(args: argparse.Namespace) -> None:
     elif args.command == "fixers":
         onfixes(args.filename, fixers=args.fixers)
     elif args.command == "larkify":
-        larkify(args.filename, fixers=args.fixers, astrw=args.asteez)
+        larkify(args.filename, args)
 
 
 def main():
@@ -227,6 +235,9 @@ def main():
     )
     larkify.add_argument(
         "--asteez", default=[], required=False, action="append"
+    )
+    larkify.add_argument(
+        "-for-tests", "-t", default=False, action="store_true", help="for tests"
     )
 
     args = parser.parse_args()

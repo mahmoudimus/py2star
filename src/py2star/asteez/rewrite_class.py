@@ -1,3 +1,4 @@
+import argparse
 import typing
 
 import libcst as cst
@@ -6,10 +7,36 @@ from libcst import matchers as m
 from libcst.codemod import CodemodContext
 
 
-class ClassToFunctionRewriter(cst.CSTTransformer):
-    def __init__(self, namespace_defs=False):
-        super(ClassToFunctionRewriter, self).__init__()
+# class ClassToFunctionRewriter(cst.CSTTransformer):
+class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
+
+    DESCRIPTION = "Rewrites classes to functions"
+
+    @staticmethod
+    def add_args(arg_parser: argparse.ArgumentParser) -> None:
+        # Add command-line args that a user can specify for running this
+        # codemod.
+        arg_parser.add_argument(
+            "--namespace-defs",
+            dest="namespace_defs",
+            help="namespace functions to their outer classes",
+            default=False,
+            action="store_true",
+        )
+        arg_parser.add_argument(
+            "--remove-decorators",
+            dest="remove_decorators",
+            help="remove decorators",
+            default=False,
+            action="store_true",
+        )
+
+    def __init__(
+        self, context, namespace_defs=False, remove_decorators=False
+    ) -> None:
+        super(ClassToFunctionRewriter, self).__init__(context)
         self.namespace_defs = namespace_defs
+        self.remove_decorators = remove_decorators
         self.class_name = ""
         self.init_params = None
 
@@ -32,6 +59,7 @@ class ClassToFunctionRewriter(cst.CSTTransformer):
         stripper = FunctionParameterStripper(CodemodContext(), ["self"])
         updated_node = updated_node.visit(stripper)
 
+        decorators = self.undecorate_function(updated_node)
         # If there's an init, take its params to convert it
         # from:
         #
@@ -60,10 +88,21 @@ class ClassToFunctionRewriter(cst.CSTTransformer):
                 updated_node.with_changes(
                     name=self._namespace_function_name(updated_node),
                     params=params,
+                    decorators=decorators,
                 ),
                 cst.SimpleStatementLine(body=[self_func_assign]),
             ]
         )
+
+    def undecorate_function(self, updated_node):
+        if not self.remove_decorators:
+            return updated_node.decorators
+
+        decorators = []
+        for dec in updated_node.decorators:
+            if dec.decorator.value in ["staticmethod", "classmethod"]:
+                continue
+        return decorators
 
     @staticmethod
     def _assign_func_to_self(updated_node: cst.FunctionDef):

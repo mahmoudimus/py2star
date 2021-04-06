@@ -13,7 +13,7 @@ from lib2to3.pgen2 import token
 from py2star import utils
 
 # match bR'..' or rB'...'
-_literal_re = re.compile(r"([rR]?[bBuU]|[bBuU][rR]?)[\'\"]")
+_literal_re = re.compile(r"([rR]?[bB]|[bB][rR]?)[\'\"]")
 
 
 class FixBytestring(fixer_base.BaseFix):
