@@ -142,7 +142,14 @@ def larkify(filename, args):
     program = libcst.parse_module(out)
     rewritten = program
 
-    transformers = []
+    transformers = [
+        rewrite_loopz.WhileToForLoop(context),
+        functionz.GeneratorToFunction(context),
+        rewrite_comparisons.UnchainComparison(context),
+        rewrite_comparisons.IsComparisonTransformer(),
+        rewrite_imports.RewriteImports(),
+    ]
+    # must run last otherwise messes up all the other transformers above
     if args.for_tests:
         transformers += [
             rewrite_class.FunctionParameterStripper(context, ["self"]),
@@ -152,14 +159,8 @@ def larkify(filename, args):
         # we don't want class to function rewriter for tests since
         # there's already a fixer for tests based on lib2to3
         transformers.append(rewrite_class.ClassToFunctionRewriter(context))
-    transformers += [
-        rewrite_loopz.WhileToForLoop(context),
-        functionz.GeneratorToFunction(context),
-        rewrite_comparisons.UnchainComparison(context),
-        rewrite_comparisons.IsComparisonTransformer(),
-        rewrite_imports.RewriteImports(),
-    ]
     for l in transformers:
+        logger.debug("running transformer: %s", l)
         rewritten = rewritten.visit(l)
     print(rewritten.code)
 

@@ -184,7 +184,9 @@ class Complicated():
 """
     )
     context = CodemodContext()
-    c2frw = rewrite_class.ClassToFunctionRewriter(context)
+    c2frw = rewrite_class.ClassToFunctionRewriter(
+        context, remove_decorators=True
+    )
     rewritten = tree.visit(c2frw)
     expected = """
 def Foo():

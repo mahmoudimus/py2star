@@ -37,7 +37,7 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
         super(ClassToFunctionRewriter, self).__init__(context)
         self.namespace_defs = namespace_defs
         self.remove_decorators = remove_decorators
-        self.class_name = ""
+        self.class_name = None
         self.init_params = None
 
     def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
@@ -83,16 +83,17 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
             params = updated_node.params
             self_func_assign = self._assign_func_to_self(updated_node)
 
-        return cst.FlattenSentinel(
-            [
-                updated_node.with_changes(
-                    name=self._namespace_function_name(updated_node),
-                    params=params,
-                    decorators=decorators,
-                ),
-                cst.SimpleStatementLine(body=[self_func_assign]),
-            ]
-        )
+        results = [
+            updated_node.with_changes(
+                name=self._namespace_function_name(updated_node),
+                params=params,
+                decorators=decorators,
+            )
+        ]
+        if self.class_name:
+            results.append(cst.SimpleStatementLine(body=[self_func_assign]))
+
+        return cst.FlattenSentinel(results)
 
     def undecorate_function(self, updated_node):
         if not self.remove_decorators:
@@ -196,6 +197,7 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
         # )
         params = self.init_params if self.init_params else cst.Parameters()
         body = self.append_return_self_to_body(updated_node)
+        self.class_name = None
         return updated_node.deep_replace(
             updated_node,
             cst.FunctionDef(
