@@ -8,6 +8,7 @@ from lib2to3 import refactor
 
 import libcst
 from libcst.codemod import CodemodContext
+
 from py2star.asteez import (
     functionz,
     rewrite_class,
@@ -132,6 +133,25 @@ def onfixes(filename, fixers, doprint=True):
 
 
 def larkify(filename, args):
+    # TODO:
+    #  - warn on unknown symbols
+    #   - potential corner case: self.xx in dedented functions not in an enclosing function
+    #  - rewrite try/except statements
+    #  - Fix up the imports
+    # .   # from Crypto.PublicKey import RSA
+    # .    load("@vendor//Crypto/PublicKey/RSA", "RSA")
+    # .
+    #  - Exceptions => fail(), fix up the strings
+    #    - fail("TypeError(\"xxxxxx\")") => fail("TypeError: xxxxxx")
+    #    - test string formatting cases as well
+    #  -  if methods are referenced in the class, then they should be
+    #      ordered so that they are defined first before invoking them
+    #      in init? test this!
+    #  - if byte literals are in ascii range, do not escape them by
+    #     converting them to hex digits
+    #     i.e. bytes([0x70, 0x61, 0x73, 0x73, 0x77, 0x6F, 0x72, 0x64]) ==
+    #            bytes("password", encoding="utf-8") == b"password"
+    #  - remove if __name__ == '__main__'..
     fixers = args.fixers
     out = onfixes(filename, fixers, doprint=False)
     # TODO: dynamic
@@ -144,6 +164,7 @@ def larkify(filename, args):
 
     transformers = [
         rewrite_loopz.WhileToForLoop(context),
+        functionz.RewriteTypeChecks(context),
         functionz.GeneratorToFunction(context),
         rewrite_comparisons.UnchainComparison(context),
         rewrite_comparisons.IsComparisonTransformer(),
@@ -158,7 +179,11 @@ def larkify(filename, args):
     else:
         # we don't want class to function rewriter for tests since
         # there's already a fixer for tests based on lib2to3
-        transformers.append(rewrite_class.ClassToFunctionRewriter(context))
+        transformers.append(
+            rewrite_class.ClassToFunctionRewriter(
+                context, remove_decorators=False
+            )
+        )
     for l in transformers:
         logger.debug("running transformer: %s", l)
         rewritten = rewritten.visit(l)

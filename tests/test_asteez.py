@@ -9,6 +9,7 @@ import pytest
 from libcst.codemod import CodemodContext
 from py2star.asteez import (
     functionz,
+    remove_exceptions,
     remove_types,
     rewrite_class,
     rewrite_comparisons,
@@ -160,6 +161,52 @@ b != False
     assert expected.strip() == rewritten.code.strip()
 
 
+def test_remove_exceptions():
+    tree = cst.parse_module(
+        """
+def foo(a, b, c):
+    try:
+        1/0
+    except ZeroDivisionError:
+        raise ValueError("cannot divide by zero")
+    except Exception:
+        raise TypeError("What?")
+"""
+    )
+    context = CodemodContext()
+    c2frw = remove_exceptions.RemoveExceptions(context)
+    rewritten = tree.visit(c2frw)
+    expected = """
+"""
+    # using split() avoids having to trim trailing whitespace.
+    assert _remove_empty_lines(rewritten.code) == _remove_empty_lines(expected)
+
+
+def test_rewrite_typechecks():
+    tree = cst.parse_module(
+        """
+def foo(a, b, c):
+    if isinstance({}, dict):
+        return "hello"
+    elif callable(lambda : 1):
+        return "what?"
+"""
+    )
+    context = CodemodContext()
+    c2frw = functionz.RewriteTypeChecks(context)
+    rewritten = tree.visit(c2frw)
+    # rewritten = c2frw.transform_module(tree)
+    expected = """
+def foo(a, b, c):
+    if types.is_instance({}, dict):
+        return "hello"
+    elif types.is_callable(lambda : 1):
+        return "what?"
+"""
+    # using split() avoids having to trim trailing whitespace.
+    assert _remove_empty_lines(rewritten.code) == _remove_empty_lines(expected)
+
+
 def test_class_to_function():
     tree = cst.parse_module(
         """
@@ -190,22 +237,28 @@ class Complicated():
     rewritten = tree.visit(c2frw)
     expected = """
 def Foo():
+    self = larky.mutablestruct(__class__='Foo')
     def __init__():
         pass
+        return self
     self = __init__()
 
     return self
 
 def Bar(var, value):
+    self = larky.mutablestruct(__class__='Bar')
     def __init__(var, value):
         pass
+        return self
     self = __init__(var, value)
 
     return self
 
 def Complicated(x, y, z=1):
+    self = larky.mutablestruct(__class__='Complicated')
     def __init__(x, y, z):
         pass
+        return self
     self = __init__(x, y, z)
 
     def foo(one, two=2):

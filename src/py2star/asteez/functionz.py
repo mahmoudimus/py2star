@@ -5,8 +5,10 @@ import textwrap
 import typing
 
 import libcst as cst
-from libcst import codemod
+from libcst import matchers as m
+from libcst import Attribute, BaseExpression, Call, Name, codemod
 from libcst.codemod import CodemodContext
+from libcst.codemod.visitors import AddImportsVisitor
 
 
 def testsuite_generator(tree):
@@ -54,3 +56,34 @@ class GeneratorToFunction(codemod.VisitorBasedCodemodCommand):
             updated_node,
             cst.ListComp(elt=updated_node.elt, for_in=updated_node.for_in),
         )
+
+
+class RewriteTypeChecks(codemod.VisitorBasedCodemodCommand):
+    def __init__(self, context: CodemodContext):
+        super(RewriteTypeChecks, self).__init__(context)
+
+    # types.star currently has...
+    def leave_Call(
+        self, original_node: "Call", updated_node: "Call"
+    ) -> "BaseExpression":
+        if m.matches(updated_node, m.Call(func=m.Name("isinstance"))):
+            AddImportsVisitor.add_needed_import(
+                self.context,
+                "types",
+                "types",
+            )
+            # types.is_instance(...)
+            #
+            return updated_node.with_changes(
+                func=Attribute(value=Name("types"), attr=Name("is_instance"))
+            )
+        elif m.matches(updated_node, m.Call(func=m.Name("callable"))):
+            AddImportsVisitor.add_needed_import(
+                self.context,
+                "types",
+                "types",
+            )
+            return updated_node.with_changes(
+                func=Attribute(value=Name("types"), attr=Name("is_callable"))
+            )
+        return super().leave_Call(original_node, updated_node)

@@ -73,25 +73,32 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
         #     def __init__(foo, value):
         #         pass
         #
+        before = None
         if updated_node.name.value == "__init__":
             # init is a special case
             # TODO: __new__ and metaclasses? not supported for now.
             self.init_params = updated_node.params
             params = self._remove_default_values(updated_node.params)
-            self_func_assign = self._emulate_class_construction(updated_node)
+            (
+                before,
+                updated_node,
+                self_func_assign,
+            ) = self._emulate_class_construction(updated_node, self.class_name)
         else:
             params = updated_node.params
-            self_func_assign = self._assign_func_to_self(updated_node)
+            before, self_func_assign = self._assign_func_to_self(updated_node)
 
-        results = [
+        results = [before] if before else []
+        results.append(
             updated_node.with_changes(
                 name=self._namespace_function_name(updated_node),
                 params=params,
                 decorators=decorators,
             )
-        ]
+        )
         if self.class_name:
-            results.append(cst.SimpleStatementLine(body=[self_func_assign]))
+            # results.append(cst.SimpleStatementLine(body=[self_func_assign]))
+            results.append(self_func_assign)
 
         return cst.FlattenSentinel(results)
 
@@ -140,14 +147,65 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
             ],
             value=cst.Name(value=f"{func_name}"),
         )
-        return self_func_assign
+        return None, cst.SimpleStatementLine(body=[self_func_assign])
 
     @staticmethod
-    def _emulate_class_construction(updated_node: cst.FunctionDef):
+    def _emulate_class_construction(updated_node: cst.FunctionDef, class_name):
         func_name = updated_node.name.value
         args = []
         for p in updated_node.params.params:
             args.append(cst.Arg(value=p.name))
+        # self = larky.mutablestruct(__class__='xxxx')
+        before = cst.SimpleStatementLine(
+            body=[
+                cst.Assign(
+                    targets=[
+                        cst.AssignTarget(
+                            target=cst.Name(value="self"),
+                            whitespace_before_equal=cst.SimpleWhitespace(
+                                value=" "
+                            ),
+                            whitespace_after_equal=cst.SimpleWhitespace(
+                                value=" "
+                            ),
+                        )
+                    ],
+                    value=cst.Call(
+                        func=cst.Attribute(
+                            value=cst.Name(value="larky"),
+                            attr=cst.Name(value="mutablestruct"),
+                        ),
+                        args=[
+                            cst.Arg(
+                                value=cst.SimpleString(value=f"'{class_name}'"),
+                                keyword=cst.Name(value="__class__"),
+                                equal=cst.AssignEqual(
+                                    whitespace_before=cst.SimpleWhitespace(
+                                        value="",
+                                    ),
+                                    whitespace_after=cst.SimpleWhitespace(
+                                        value="",
+                                    ),
+                                ),
+                            )
+                        ],
+                    ),
+                )
+            ]
+        )
+        # def __init__():
+        #     return self  <-- insert this.
+        body: cst.IndentedBlock = updated_node.body.with_changes(
+            body=[
+                updated_node.body.body[0],
+                cst.SimpleStatementLine(
+                    body=[cst.Return(value=cst.Name(value="self"))]
+                ),
+            ]
+        )
+        # XXX: todo, what about pass?
+        updated_node = updated_node.with_changes(body=body)
+        # self = __init__(**kwargs)
         self_func_assign = cst.Assign(
             targets=[
                 cst.AssignTarget(
@@ -158,7 +216,12 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
             ],
             value=cst.Call(func=cst.Name(value=f"{func_name}"), args=args),
         )
-        return self_func_assign
+
+        return (
+            before,
+            updated_node,
+            cst.SimpleStatementLine(body=[self_func_assign]),
+        )
 
     def _namespace_function_name(self, node):
         """

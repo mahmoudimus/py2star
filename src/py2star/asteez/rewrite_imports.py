@@ -5,6 +5,8 @@ from typing import Dict, Set, Union
 import libcst as cst
 import libcst.matchers as m
 from importanize import utils as importutils
+
+# from libcst.codemod.visitors import AddImportsVisitor
 from libcst.helpers import get_full_name_for_node
 
 logger = logging.getLogger(__name__)
@@ -97,6 +99,8 @@ class RemoveUnusedImports(cst.CSTTransformer):
         return self.leave_import_alike(original_node, updated_node)
 
 
+# check AddImportsVisitor
+# # from libcst.codemod.visitors import AddImportsVisitor
 class RewriteImports(cst.CSTTransformer):
 
     FUTURE_IMPORT = "__future__"
