@@ -16,4 +16,4 @@ class RemoveExceptions(codemod.VisitorBasedCodemodCommand):
     ) -> Union[
         "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
     ]:
-        pass
+        return updated_node

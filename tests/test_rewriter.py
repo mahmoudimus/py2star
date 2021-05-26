@@ -1,27 +1,18 @@
-import ast
 import logging
 from lib2to3 import refactor
 from textwrap import dedent
 
-import pytest
-
 logger = logging.getLogger(__name__)
 
 
-@pytest.fixture()
-def program() -> ast.Module:
-    m = ast.parse(open("simple_class.py").read())
-    return m
-
-
-def test_rewrite():
+def test_rewrite(simple_class):
     _fixers = refactor.get_fixers_from_package("py2star.fixes")
     assert isinstance(_fixers, list) and len(_fixers) != 0
 
     def rt(fixers, options=None, explicit=None):
         return refactor.RefactoringTool(fixers, options, explicit)
 
-    out = open("simple_class.py").read()
+    out = simple_class
     # out = open("sample_test2.py").read()
     for f in _fixers:
         # if not f.endswith("fix_exceptions"):

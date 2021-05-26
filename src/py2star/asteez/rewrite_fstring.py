@@ -20,11 +20,14 @@ class RemoveFStrings(ast.NodeTransformer):
             elif isinstance(value, ast.FormattedValue):
                 base_str += "%"
                 if value.format_spec is None:
-                    raise SyntaxError(
-                        "f-strings without format specifier not supported",
-                        ("<string>", value.lineno, value.col_offset,"????")
-                    )
-                base_str += value.format_spec.values[0].value
+                    # if there is no format_spec, lets just convert it to %s
+                    base_str += "s"
+                    # raise SyntaxError(
+                    #     "f-strings without format specifier not supported",
+                    #     ("<string>", value.lineno, value.col_offset,"????")
+                    # )
+                else:
+                    base_str += value.format_spec.values[0].value
                 elements.append(value.value)
             else:
                 raise NotImplementedError

@@ -1,12 +1,13 @@
-import ast
 import logging
-import pprint
+import os.path
+from pathlib import Path
 from textwrap import dedent
 
 import astunparse
 import libcst as cst
 import pytest
 from libcst.codemod import CodemodContext
+from libcst.metadata import FullyQualifiedNameProvider
 from py2star.asteez import (
     functionz,
     remove_exceptions,
@@ -21,31 +22,12 @@ from py2star.asteez import (
 logger = logging.getLogger(__name__)
 
 
-@pytest.fixture()
-def program() -> ast.Module:
-    m = ast.parse(open("simple_class.py").read())
-    return m
-
-
-@pytest.fixture()
-def source_tree():
-    return cst.parse_module(open("simple_class.py").read())
-
-
-@pytest.fixture()
-def complex_class():
-    return ast.parse(open("sample_test.py").read())
-
-
-@pytest.fixture()
-def toplevel_functions():
-    return ast.parse(open("toplevelfunctions.py").read())
-
-
 def test_remove_fstring(program):
     rewriter = rewrite_fstring.RemoveFStrings()
     rewritten = rewriter.visit(program)
-    print(astunparse.unparse(rewritten))
+    code = astunparse.unparse(rewritten)
+    assert "raise ValueError(('%s, %s, %s' % (key, mode, nonce)))" in code
+    assert "return ('%s' % (foo,))" in code
 
 
 def test_remove_types(source_tree):
@@ -161,6 +143,7 @@ b != False
     assert expected.strip() == rewritten.code.strip()
 
 
+@pytest.mark.xfail
 def test_remove_exceptions():
     tree = cst.parse_module(
         """
@@ -288,6 +271,7 @@ def test_rewrite_imports():
     import unittest
     from binascii import unhexlify
     
+    import Crypto.Hash.SHA256
     from Crypto.SelfTest.st_common import list_test_cases
     from Crypto.SelfTest.loader import load_test_vectors, load_test_vectors_wycheproof
     
@@ -299,13 +283,25 @@ def test_rewrite_imports():
     # load("@stdlib//unittest")
     """
     tree = cst.parse_module(dedent(sample))
-    wrapper = cst.metadata.MetadataWrapper(tree)
-    rwi = rewrite_imports.RewriteImports()
+    pkg_root = os.path.basename(__file__)
+    wrapper = cst.MetadataWrapper(
+        tree,
+        cache={
+            FullyQualifiedNameProvider: FullyQualifiedNameProvider.gen_cache(
+                Path(""), [pkg_root], None
+            ).get(pkg_root, "")
+        },
+    )
+    wrapper.resolve_many(rewrite_imports.RewriteImports.METADATA_DEPENDENCIES)
+    rwi = rewrite_imports.RewriteImports(
+        context=CodemodContext(wrapper=wrapper, filename=pkg_root)
+    )
     rewritten = wrapper.visit(rwi)
     expected = """
     load("@stdlib//unittest", unittest="unittest")
     load("@stdlib//binascii", unhexlify="unhexlify")
     
+    load("@vendor//Crypto/Hash", SHA256="SHA256")
     load("@vendor//Crypto/SelfTest/st_common", list_test_cases="list_test_cases")
     load("@vendor//Crypto/SelfTest/loader", load_test_vectors="load_test_vectors", load_test_vectors_wycheproof="load_test_vectors_wycheproof")
     

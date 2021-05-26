@@ -188,7 +188,8 @@ class RewriteImports(cst.codemod.VisitorBasedCodemodCommand):
             # import a.b.c
             if type(import_attr.value) == cst.Attribute:
                 # let's re-write to from a.b import c
-                mod_name = f"{import_attr.value.value}.{import_attr.attr.value}"
+                _node = import_attr.value
+                mod_name = f"{_node.value.value}.{_node.attr.value}"
             # import a.b as c
             elif type(import_attr.value) == cst.Name:
                 mod_name = import_attr.value.value
