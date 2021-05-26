@@ -147,41 +147,11 @@ def onfixes(filename, fixers, doprint=True):
 
 
 def larkify(filename, args):
-    # TODO:
-    #  - warn on unknown symbols
-    #   - potential corner case: self.xx in dedented functions not in an enclosing function
-    #  - rewrite try/except statements
-    #  - Fix up the imports
-    # .   # from Crypto.PublicKey import RSA
-    # .    load("@vendor//Crypto/PublicKey/RSA", "RSA")
-    # .- Rewrite lib2to3 fixers to libcst
-    #  - integrate lib3to6?
-    #  - rewrite:
-    #       a = b = "xyz" to:
-    #         a = "xyz"
-    #         b = a
-    #  - Exceptions => fail(), fix up the strings
-    #    - fail("TypeError(\"xxxxxx\")") => fail("TypeError: xxxxxx")
-    #    - test string formatting cases as well
-    #  -  if methods are referenced in the class, then they should be
-    #      ordered so that they are defined first before invoking them
-    #      in init? test this!
-    #  - if byte literals are in ascii range, do not escape them by
-    #     converting them to hex digits
-    #     i.e. bytes([0x70, 0x61, 0x73, 0x73, 0x77, 0x6F, 0x72, 0x64]) ==
-    #            bytes("password", encoding="utf-8") == b"password"
-    #  - remove if __name__ == '__main__'..
-    #  - operators:
-    #     - ** to pow
-    #     - X @ Y = operator.matmul(x,y)..
-    #  - decorators should be desugared
-    #
+    # TODO: dynamic
+    # asteez.get_ast_rewriters_from_package("py2star.asteez")
     pkg_root = _package_path(args, filename)
     fixers = args.fixers
     out = onfixes(filename, fixers, doprint=False)
-    # TODO: dynamic
-    #  asteez.get_ast_rewriters_from_package("py2star.asteez")
-
     program = libcst.parse_module(out)
     wrapper = libcst.MetadataWrapper(
         program,

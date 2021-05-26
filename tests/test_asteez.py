@@ -272,6 +272,7 @@ def test_rewrite_imports():
     from binascii import unhexlify
     
     import Crypto.Hash.SHA256
+    # TODO: fix this one! ==> from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
     from Crypto.SelfTest.st_common import list_test_cases
     from Crypto.SelfTest.loader import load_test_vectors, load_test_vectors_wycheproof
     
@@ -302,6 +303,7 @@ def test_rewrite_imports():
     load("@stdlib//binascii", unhexlify="unhexlify")
     
     load("@vendor//Crypto/Hash", SHA256="SHA256")
+    # TODO: fix this one! ==> from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
     load("@vendor//Crypto/SelfTest/st_common", list_test_cases="list_test_cases")
     load("@vendor//Crypto/SelfTest/loader", load_test_vectors="load_test_vectors", load_test_vectors_wycheproof="load_test_vectors_wycheproof")
     
