@@ -4,7 +4,7 @@ import libcst as cst
 import pytest
 
 
-_DATA_DIR = "tests"
+_DATA_DIR = "tests/data"
 
 
 @pytest.fixture()
