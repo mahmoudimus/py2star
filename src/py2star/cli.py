@@ -94,9 +94,9 @@ def _add_common(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
     )
     p.add_argument(
         "-p",
-        "--file-path",
+        "--pkg-path",
         default=None,
-        help="Override the default file path for resolving local imports",
+        help="Override the default pkg path for resolving local imports",
     )
     return p
 
@@ -176,10 +176,7 @@ def larkify(filename, args):
     #     - X @ Y = operator.matmul(x,y)..
     #  - decorators should be desugared
     #
-    # use file_path to compute relative path?
-    # >>> os.path.relpath("/src/python-jose/jose/jwt.py", "/src/python-jose")
-    # 'jose/jwt.py'
-    file_path = args.file_path if args.file_path else filename
+    pkg_root = _package_path(args, filename)
     fixers = args.fixers
     out = onfixes(filename, fixers, doprint=False)
     # TODO: dynamic
@@ -190,8 +187,8 @@ def larkify(filename, args):
         program,
         cache={
             FullyQualifiedNameProvider: FullyQualifiedNameProvider.gen_cache(
-                Path(""), [file_path], None
-            ).get(file_path, "")
+                Path(""), [pkg_root], None
+            ).get(pkg_root, "")
         },
     )
 
@@ -227,6 +224,14 @@ def larkify(filename, args):
         rewritten = rewritten.visit(l)
 
     print(rewritten.code)
+
+
+def _package_path(args, filename):
+    # use file_path to compute relative path?
+    # >>> os.path.relpath("/src/python-jose/jose/jwt.py", "/src/python-jose")
+    # 'jose/jwt.py'
+    package_path = args.pkg_path if args.pkg_path else filename
+    return package_path
 
 
 def execute(args: argparse.Namespace) -> None:
