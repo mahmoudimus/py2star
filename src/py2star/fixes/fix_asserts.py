@@ -371,7 +371,7 @@ def RaisesOp(context, exceptionClass, indent, kws, arglist, node):
     else:
         func = None
 
-    if func.type == syms.lambdef:
+    if func and func.type == syms.lambdef:
         suite = func.children[-1].clone()
     else:
         if func is None:

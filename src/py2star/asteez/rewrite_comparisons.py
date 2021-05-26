@@ -5,6 +5,7 @@ from typing import Union
 
 import libcst as cst
 from libcst import codemod, matchers as m
+from libcst.codemod import CodemodContext, ContextAwareTransformer
 
 
 def pairwise(iterable):
@@ -74,7 +75,11 @@ class UnchainComparison(codemod.VisitorBasedCodemodCommand):
         return len(node.comparisons) > 1
 
 
-class IsComparisonTransformer(m.MatcherDecoratableTransformer):
+class IsComparisonTransformer(ContextAwareTransformer):
+    def __init__(self, context=None):
+        context = context if context else CodemodContext()
+        super(IsComparisonTransformer, self).__init__(context)
+
     @m.leave(m.ComparisonTarget(comparator=m.DoNotCare(), operator=m.Is()))
     def convert_is_to_equals(
         self, _, updated_node: cst.ComparisonTarget

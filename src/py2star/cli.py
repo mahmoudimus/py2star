@@ -2,15 +2,23 @@ import argparse
 import ast
 import io
 import logging
+import os
 import sys
 import tokenize
 from lib2to3 import refactor
+from pathlib import Path
 
 import libcst
 from libcst.codemod import CodemodContext
+from libcst.metadata import (
+    FullyQualifiedNameProvider,
+    ParentNodeProvider,
+    QualifiedNameProvider,
+)
 
 from py2star.asteez import (
     functionz,
+    remove_types,
     rewrite_class,
     rewrite_comparisons,
     rewrite_imports,
@@ -84,6 +92,12 @@ def _add_common(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
         help="Set the logging level",
         choices=["debug", "info", "warn", "warning", "error", "critical"],
     )
+    p.add_argument(
+        "-p",
+        "--file-path",
+        default=None,
+        help="Override the default file path for resolving local imports",
+    )
     return p
 
 
@@ -140,7 +154,12 @@ def larkify(filename, args):
     #  - Fix up the imports
     # .   # from Crypto.PublicKey import RSA
     # .    load("@vendor//Crypto/PublicKey/RSA", "RSA")
-    # .
+    # .- Rewrite lib2to3 fixers to libcst
+    #  - integrate lib3to6?
+    #  - rewrite:
+    #       a = b = "xyz" to:
+    #         a = "xyz"
+    #         b = a
     #  - Exceptions => fail(), fix up the strings
     #    - fail("TypeError(\"xxxxxx\")") => fail("TypeError: xxxxxx")
     #    - test string formatting cases as well
@@ -152,23 +171,42 @@ def larkify(filename, args):
     #     i.e. bytes([0x70, 0x61, 0x73, 0x73, 0x77, 0x6F, 0x72, 0x64]) ==
     #            bytes("password", encoding="utf-8") == b"password"
     #  - remove if __name__ == '__main__'..
+    #  - operators:
+    #     - ** to pow
+    #     - X @ Y = operator.matmul(x,y)..
+    #  - decorators should be desugared
+    #
+    # use file_path to compute relative path?
+    # >>> os.path.relpath("/src/python-jose/jose/jwt.py", "/src/python-jose")
+    # 'jose/jwt.py'
+    file_path = args.file_path if args.file_path else filename
     fixers = args.fixers
     out = onfixes(filename, fixers, doprint=False)
     # TODO: dynamic
     #  asteez.get_ast_rewriters_from_package("py2star.asteez")
 
-    context = CodemodContext()
-
     program = libcst.parse_module(out)
-    rewritten = program
+    wrapper = libcst.MetadataWrapper(
+        program,
+        cache={
+            FullyQualifiedNameProvider: FullyQualifiedNameProvider.gen_cache(
+                Path(""), [file_path], None
+            ).get(file_path, "")
+        },
+    )
+
+    wrapper.resolve_many(rewrite_imports.RewriteImports.METADATA_DEPENDENCIES)
+    context = CodemodContext(wrapper=wrapper, filename=filename)
+    rewriter = rewrite_imports.RewriteImports(context)
+    rewritten = wrapper.visit(rewriter)
 
     transformers = [
+        remove_types.RemoveTypesTransformer(context),
         rewrite_loopz.WhileToForLoop(context),
         functionz.RewriteTypeChecks(context),
         functionz.GeneratorToFunction(context),
         rewrite_comparisons.UnchainComparison(context),
-        rewrite_comparisons.IsComparisonTransformer(),
-        rewrite_imports.RewriteImports(),
+        rewrite_comparisons.IsComparisonTransformer(context),
     ]
     # must run last otherwise messes up all the other transformers above
     if args.for_tests:
@@ -187,6 +225,7 @@ def larkify(filename, args):
     for l in transformers:
         logger.debug("running transformer: %s", l)
         rewritten = rewritten.visit(l)
+
     print(rewritten.code)
 
 
