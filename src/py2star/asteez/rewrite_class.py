@@ -8,7 +8,7 @@ from libcst.codemod import CodemodContext
 
 
 # class ClassToFunctionRewriter(cst.CSTTransformer):
-class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
+class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
 
     DESCRIPTION = "Rewrites classes to functions"
 
@@ -302,7 +302,7 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
         return cst.Parameters(updated)
 
 
-class FunctionParameterStripper(codemod.VisitorBasedCodemodCommand):
+class FunctionParameterStripper(codemod.ContextAwareTransformer):
     DESCRIPTION = "Strips configured params from function signatures"
 
     def __init__(self, context: CodemodContext, params: typing.List):
@@ -340,7 +340,7 @@ class FunctionParameterStripper(codemod.VisitorBasedCodemodCommand):
         return modified_params
 
 
-class AttributeGetter(codemod.VisitorBasedCodemodCommand):
+class AttributeGetter(codemod.ContextAwareTransformer):
     DESCRIPTION = "AttributeGetter(ctx, ['self']): self.foo() => foo()"
 
     def __init__(self, context: CodemodContext, namespace: typing.List):

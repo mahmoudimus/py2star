@@ -7,7 +7,7 @@ import typing
 import libcst as cst
 from libcst import matchers as m
 from libcst import Attribute, BaseExpression, Call, Name, codemod
-from libcst.codemod import CodemodContext
+from libcst.codemod import CodemodContext, ContextAwareTransformer
 from libcst.codemod.visitors import AddImportsVisitor
 
 
@@ -43,7 +43,7 @@ def testsuite_generator(tree):
     return s
 
 
-class GeneratorToFunction(codemod.VisitorBasedCodemodCommand):
+class GeneratorToFunction(codemod.ContextAwareTransformer):
     def __init__(self, context: CodemodContext):
         super(GeneratorToFunction, self).__init__(context)
 
@@ -58,9 +58,7 @@ class GeneratorToFunction(codemod.VisitorBasedCodemodCommand):
         )
 
 
-class RewriteTypeChecks(codemod.VisitorBasedCodemodCommand):
-    def __init__(self, context: CodemodContext):
-        super(RewriteTypeChecks, self).__init__(context)
+class RewriteTypeChecks(codemod.ContextAwareTransformer):
 
     # types.star currently has...
     def leave_Call(

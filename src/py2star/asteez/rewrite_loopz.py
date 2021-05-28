@@ -38,7 +38,7 @@ def invert(node):
     return inverse_node
 
 
-class WhileToForLoop(codemod.VisitorBasedCodemodCommand):
+class WhileToForLoop(codemod.ContextAwareTransformer):
     def leave_While(
         self, original_node: ast.While, updated_node: ast.While
     ) -> typing.Union[ast.BaseStatement, ast.RemovalSentinel]:

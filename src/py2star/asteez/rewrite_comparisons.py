@@ -15,7 +15,7 @@ def pairwise(iterable):
     return zip(a, b)
 
 
-class UnchainComparison(codemod.VisitorBasedCodemodCommand):
+class UnchainComparison(codemod.ContextAwareTransformer):
     """
     ChainedCompare
 
@@ -75,7 +75,7 @@ class UnchainComparison(codemod.VisitorBasedCodemodCommand):
         return len(node.comparisons) > 1
 
 
-class IsComparisonTransformer(ContextAwareTransformer):
+class IsComparisonTransformer(codemod.ContextAwareTransformer):
     def __init__(self, context=None):
         context = context if context else CodemodContext()
         super(IsComparisonTransformer, self).__init__(context)

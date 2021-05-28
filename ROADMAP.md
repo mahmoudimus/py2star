@@ -2,17 +2,18 @@
  
 ### imports     
 
-- from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
-- relative imports: 
-  - from .base import y => load("@vendor//pkgname/base/y", y="y")
+- [ ] from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
+- [x] relative imports: 
+  1. from .base import y => load("@vendor//pkgname/base/y", y="y")  
 
-- warn on unknown symbols
-  - potential corner case: self.xx in dedented functions not in an enclosing function
+- [ ] warn on unknown symbols
+  1. potential corner case: self.xx in dedented functions not in an enclosing function
 
 ### desugaring
 
-- decorators should be desugared
-- set literals should be desugared from {} to sets.make()
+- [ ] decorators should be desugared
+- [ ] set literals should be desugared from {} to sets.make()
+  
   In [3]: ast.dump(ast.parse("""set([1, 2])"""))
   Out[3]: "Module(body=[Expr(value=Call(func=Name(id='set', ctx=Load()), args=[List(e
   lts=[Constant(value=1, kind=None), Constant(value=2, kind=None)], ctx=Load())], key
@@ -23,8 +24,6 @@
   nt(value=1, kind=None), Constant(value=2, kind=None)], keywords=[]))], type_ignores
   =[])"
   
-- 
-
 ### complex translations
 
 - rewrite try/except statements
@@ -37,13 +36,16 @@
     - a = b = "xyz" to:
       - a = "xyz"
       - b = a
+    
+- decode()/encode() should be translated to codecs.encode()/codecs.decode()
 
 ### exceptions
 
-- Exceptions => fail(), fix up the strings
-  - fail("TypeError(\"xxxxxx\")") => fail("TypeError: xxxxxx")
-  - test string formatting cases as well
+- [x] Exceptions => fail(), fix up the strings
+  - [x] test string formatting cases as well
     
+- [ ] ~~fail("TypeError(\"xxxxxx\")") => fail("TypeError: xxxxxx")~~
+  - [x] with introduction of `Error` `Ok` object, we no longer need to fail()
 
 ### operators
 
@@ -53,10 +55,13 @@
 
 ### bytes:
   
-  - if byte literals are in ascii range, do not escape them by converting them to 
-    hex digits 
-    
-    i.e. bytes([0x70, 0x61, 0x73, 0x73, 0x77, 0x6F, 0x72, 0x64]) == bytes("password", encoding="utf-8") == b"password"
+- [x] starlark bytes support was merged into starlarky (upstream!) 
+  
+- if byte literals are in ascii range, do not escape them by converting them to 
+  hex digits 
+  
+  i.e. bytes([0x70, 0x61, 0x73, 0x73, 0x77, 0x6F, 0x72, 0x64]) == bytes("password", encoding="utf-8") == b"password"
+  
 
 ### misc:
 

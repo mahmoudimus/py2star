@@ -3,21 +3,27 @@ import ast
 import io
 import logging
 import os
+import re
 import sys
 import tokenize
 from lib2to3 import refactor
 from pathlib import Path
+from typing import Optional, Pattern
 
 import libcst
 from libcst.codemod import CodemodContext
+from libcst.codemod.visitors import AddImportsVisitor, RemoveImportsVisitor
 from libcst.metadata import (
+    FullRepoManager,
     FullyQualifiedNameProvider,
     ParentNodeProvider,
     QualifiedNameProvider,
+    TypeInferenceProvider,
 )
 
 from py2star.asteez import (
     functionz,
+    remove_exceptions,
     remove_types,
     rewrite_class,
     rewrite_comparisons,
@@ -149,23 +155,16 @@ def onfixes(filename, fixers, doprint=True):
 def larkify(filename, args):
     # TODO: dynamic
     # asteez.get_ast_rewriters_from_package("py2star.asteez")
-    pkg_root = _package_path(args, filename)
     fixers = args.fixers
     out = onfixes(filename, fixers, doprint=False)
     program = libcst.parse_module(out)
-    wrapper = libcst.MetadataWrapper(
-        program,
-        cache={
-            FullyQualifiedNameProvider: FullyQualifiedNameProvider.gen_cache(
-                Path(""), [pkg_root], None
-            ).get(pkg_root, "")
-        },
-    )
+    wrapper = libcst.MetadataWrapper(program)
 
-    wrapper.resolve_many(rewrite_imports.RewriteImports.METADATA_DEPENDENCIES)
-    context = CodemodContext(wrapper=wrapper, filename=filename)
-    rewriter = rewrite_imports.RewriteImports(context)
-    rewritten = wrapper.visit(rewriter)
+    context = CodemodContext(
+        wrapper=wrapper,
+        filename=filename,
+        full_module_name=_full_module_name(args.pkg_path, filename),
+    )
 
     transformers = [
         remove_types.RemoveTypesTransformer(context),
@@ -174,6 +173,7 @@ def larkify(filename, args):
         functionz.GeneratorToFunction(context),
         rewrite_comparisons.UnchainComparison(context),
         rewrite_comparisons.IsComparisonTransformer(context),
+        remove_exceptions.RemoveExceptions(context),
     ]
     # must run last otherwise messes up all the other transformers above
     if args.for_tests:
@@ -189,19 +189,45 @@ def larkify(filename, args):
                 context, remove_decorators=False
             )
         )
+
     for l in transformers:
         logger.debug("running transformer: %s", l)
-        rewritten = rewritten.visit(l)
+        with l.resolve(wrapper):
+            program = program.visit(l)
 
-    print(rewritten.code)
+    transformers = [
+        AddImportsVisitor(context),
+        # RemoveImportsVisitor(context),
+        rewrite_imports.RewriteImports(context),
+    ]
+
+    for l in transformers:
+        logger.debug("running transformer: %s", l)
+        with l.resolve(wrapper):
+            program = program.visit(l)
+    print(program.code)
+    # rewriter = rewrite_imports.RewriteImports(context)
+    # rewritten = wrapper.visit(rewriter)
+    # print(rewritten.code)
 
 
-def _package_path(args, filename):
+DOT_PY: Pattern[str] = re.compile(r"(__init__)?\.py$")
+
+
+def _module_name(path: str) -> Optional[str]:
+    return DOT_PY.sub("", path).replace("/", ".").rstrip(".")
+
+
+def _full_module_name(pkg_path, filename):
     # use file_path to compute relative path?
     # >>> os.path.relpath("/src/python-jose/jose/jwt.py", "/src/python-jose")
     # 'jose/jwt.py'
-    package_path = args.pkg_path if args.pkg_path else filename
-    return package_path
+    if not pkg_path:
+        return None
+    mname = _module_name(filename)
+    if not mname.startswith(pkg_path + "."):
+        return f"{pkg_path}.{mname}"
+    return mname
 
 
 def execute(args: argparse.Namespace) -> None:

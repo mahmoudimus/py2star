@@ -145,11 +145,21 @@ b != False
 
 @pytest.mark.xfail
 def test_remove_exceptions():
+    """
+    try:
+        x(y(f(xx)))
+    except Exception:
+        xx
+
+    _tmp = safe(f)(xx).map(y).map(x)
+    :return:
+    """
+    # https://github.com/MaT1g3R/option/issues/7
     tree = cst.parse_module(
         """
 def foo(a, b, c):
     try:
-        1/0
+        a(b, c)
     except ZeroDivisionError:
         raise ValueError("cannot divide by zero")
     except Exception:
@@ -160,6 +170,43 @@ def foo(a, b, c):
     c2frw = remove_exceptions.RemoveExceptions(context)
     rewritten = tree.visit(c2frw)
     expected = """
+def foo(a, b, c):
+    _tmp = safe(a)(b, c)
+    if _tmp.is_ok:
+        return _tmp.unwrap()
+    if _tmp.
+try_(foo, 
+     except_=[
+       Error('ZeroDivisionError: ValueError: cannot divide by zero'),
+       Error('Exception: TypeError: What?')
+    ],
+    finally_=[
+    ])
+  .except_(ZeroDivisionError, ValueError("cannot divide by zero"))
+  .except_(Exception, TypeError("What?"))
+
+safe(foo)
+  .
+"""
+    # using split() avoids having to trim trailing whitespace.
+    assert _remove_empty_lines(rewritten.code) == _remove_empty_lines(expected)
+
+
+def test_rewrite_raise_to_error_object():
+    tree = cst.parse_module(
+        """
+def foo(a, b, c):
+    if not a:
+        raise ValueError("a: %s is not truthy!" % (a,))
+"""
+    )
+    context = CodemodContext()
+    c2frw = remove_exceptions.RemoveExceptions(context)
+    rewritten = tree.visit(c2frw)
+    expected = """
+def foo(a, b, c):
+    if not a:
+        return Error("ValueError: a: %s is not truthy!" % (a,))
 """
     # using split() avoids having to trim trailing whitespace.
     assert _remove_empty_lines(rewritten.code) == _remove_empty_lines(expected)

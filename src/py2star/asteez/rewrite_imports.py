@@ -1,21 +1,21 @@
 import logging
+import sys
 from collections import defaultdict
 from typing import Dict, Sequence, Set, Union, cast
 
-import ipdb
 import libcst as cst
 import libcst.codemod
 import libcst.matchers as m
 from importanize import utils as importutils
-from libcst.metadata.scope_provider import QualifiedNameSource
 
 # from libcst.codemod.visitors import AddImportsVisitor
-from libcst.codemod import CodemodContext
+from libcst import codemod
+from libcst.codemod import CodemodContext, ContextAwareTransformer
 from libcst.helpers import get_full_name_for_node
 from libcst.metadata import (
-    QualifiedNameProvider,
     FullyQualifiedNameProvider,
     ParentNodeProvider,
+    QualifiedNameProvider,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,10 +115,9 @@ class RemoveUnusedImports(cst.CSTTransformer):
 # https://github.com/Instagram/LibCST/blob/master/libcst/codemod/commands/rename.py
 # https://github.com/hakancelik96/unimport/blob/master/unimport/refactor.py
 # https://github.com/InvestmentSystems/pydelinter/blob/master/src/delinter/imports.py
-class RewriteImports(cst.codemod.VisitorBasedCodemodCommand):
+class RewriteImports(codemod.ContextAwareTransformer):
     METADATA_DEPENDENCIES = (
         QualifiedNameProvider,
-        FullyQualifiedNameProvider,
         ParentNodeProvider,
     )
     FUTURE_IMPORT = "__future__"
@@ -219,96 +218,40 @@ class RewriteImports(cst.codemod.VisitorBasedCodemodCommand):
 
     def _on_import_from(self, updated_node):
         module_attr = updated_node.module
+        relative_imports = len(updated_node.relative)
         if module_attr:
             mod_name = get_full_name_for_node(module_attr)
-            return mod_name
-
-        # mod_name = get_full_name_for_node(updated_node.module)
-        name = self.get_metadata(FullyQualifiedNameProvider, self.module).pop()
-        name_root, _, name_rest = name.name.partition(".")
-
-        assert updated_node.relative  # and module_attr
-        return f"{name_root}.{updated_node.names[0].name.value}"
-        # return f"{name_root}.{}"
-        # ImportFrom(
-        #     module=None,
-        #     names=[
-        #         ImportAlias(
-        #             name=Name(
-        #                 value='jwk',
-        #                 lpar=[],
-        #                 rpar=[],
-        #             ),
-        #             asname=None,
-        #             comma=MaybeSentinel.DEFAULT,
-        #         ),
-        #     ],
-        #     relative=[
-        #         Dot(
-        #             whitespace_before=SimpleWhitespace(
-        #                 value='',
-        #             ),
-        #             whitespace_after=SimpleWhitespace(
-        #                 value='',
-        #             ),
-        #         ),
-        #     ],
-
-        # import_names = updated_node.names
-        # for name in import_names:
-        #     real_name = get_full_name_for_node(name.name)
-        #     if not real_name:
-        #         continue
-        #     # real_name can contain `.` for dotted imports
-        #     # for these we want to find the longest prefix that matches
-        #     # full_name
-        #     parts = real_name.split(".")
-        #     real_names = [".".join(parts[:i]) for i in range(len(parts), 0, -1)]
-        #     for real_name in real_names:
-        #         as_name = real_name
-        #         if module_attr:
-        #             real_name = f"{module_attr}.{real_name}"
-        #         if name and name.asname:
-        #             eval_alias = name.evaluated_alias
-        #             if eval_alias is not None:
-        #                 as_name = eval_alias
-
-        # if full_name.startswith(as_name):
-        #     remaining_name = full_name.split(as_name, 1)[1].lstrip(".")
-        #     results.add(
-        #         QualifiedName(
-        #             f"{real_name}.{remaining_name}"
-        #             if remaining_name
-        #             else real_name,
-        #             QualifiedNameSource.IMPORT,
-        #         )
-        #     )
-        #
-        # ImportFrom(
-        #     module=None,
-        #     names=[
-        #         ImportAlias(
-        #             name=Name(
-        #                 value='jwk',
-        #                 lpar=[],
-        #                 rpar=[],
-        #             ),
-        #             asname=None,
-        #             comma=MaybeSentinel.DEFAULT,
-        #         ),
-        #     ],
-        #     relative=[
-        #         Dot(
-        #             whitespace_before=SimpleWhitespace(
-        #                 value='',
-        #             ),
-        #             whitespace_after=SimpleWhitespace(
-        #                 value='',
-        #             ),
-        #         ),
-        #     ],
-        #
-        return mod_name
+            if relative_imports == 0:
+                return mod_name
+            # we are a relative import!
+            if self.context.full_module_name is None:
+                print(
+                    "relative import",
+                    mod_name,
+                    "trans-compilation will need to to be run with -p command",
+                    "because root mod name is ambiguous..",
+                    file=sys.stderr,
+                )
+                name_root = ""
+            else:
+                # split the full module name to find out where we are
+                paths = self.context.full_module_name.split(".")
+                paths.reverse()
+                # based on how many relative dots, we will make this an
+                # absolute qualifier
+                # ... jose.backends.pycrypto_backend
+                # ... [pycrypto_backend, backends, jose]
+                # ... [[pycrypto_backend, backends, jose][len(dots)]
+                # ... from .base import Key => jose.backends.base
+                # ... from ..utils import Y => jose.utils.Y
+                name_root = ".".join(reversed(paths[relative_imports:])) + "."
+            # if len(updated_node.names) != 1:
+            #     print(
+            #         "updated_node.names != 1, will just pick first one",
+            #         file=sys.stderr,
+            #     )
+            return f"{name_root}{mod_name}"
+        assert False, "expected unreachable point"
 
     @staticmethod
     def _compile_to_larky_load(args, updated_node):
