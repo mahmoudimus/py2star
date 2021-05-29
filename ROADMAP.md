@@ -12,23 +12,26 @@
 ### desugaring
 
 - [ ] decorators should be desugared
+```python
+  # https://github.com/pydron/pydron/blob/a7b484dec8bcc2730ba9bd76bc63bf3362c05e4d/pydron/translation/dedecorator.py
+    def visit_FunctionDef(self, t):
+        t = self.generic_visit(t)
+        fn = Function(t.name, t.args, t.body)
+        for d in reversed(t.decorator_list):
+            fn = Call(d, [fn])
+        result = ast.Assign([ast.Name(t.name, store)], fn)
+        return ast.copy_location(result, t)
+```
 - [ ] set literals should be desugared from {} to sets.make()
   
-  In [3]: ast.dump(ast.parse("""set([1, 2])"""))
-  Out[3]: "Module(body=[Expr(value=Call(func=Name(id='set', ctx=Load()), args=[List(e
-  lts=[Constant(value=1, kind=None), Constant(value=2, kind=None)], ctx=Load())], key
-  words=[]))], type_ignores=[])"
-  
-  In [4]: ast.dump(ast.parse("""set(1, 2)"""))
-  Out[4]: "Module(body=[Expr(value=Call(func=Name(id='set', ctx=Load()), args=[Consta
-  nt(value=1, kind=None), Constant(value=2, kind=None)], keywords=[]))], type_ignores
-  =[])"
+
   
 ### complex translations
 
 - rewrite try/except statements
 
 - Rewrite lib2to3 fixers to libcst
+ - Particularly the test generation stuff should be easy to port tests
 
 - integrate lib3to6?
   
