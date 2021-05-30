@@ -1,6 +1,6 @@
 from typing import Union
+import warnings
 
-import libcst
 import libcst as cst
 from libcst import (
     BaseSmallStatement,
@@ -32,25 +32,52 @@ class DesugarDecorators(codemod.ContextAwareTransformer):
 
     """
 
+    @m.call_if_inside(m.ClassDef(decorators=[m.AtLeastN(n=1)]))
     def leave_ClassDef(
         self, original_node: "ClassDef", updated_node: "ClassDef"
     ) -> Union[
         "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
     ]:
+        warnings.warn(
+            "Decorators are not supported in Starlark. "
+            "Py2Star does not support transforming them either. "
+            "Please do this manually (if this transform is run *before* the "
+            "declass transform*)"
+        )
         return updated_node
 
+    @m.call_if_inside(m.FunctionDef(decorators=[m.AtLeastN(n=1)]))
     def leave_FunctionDef(
         self, original_node: "FunctionDef", updated_node: "FunctionDef"
     ) -> Union[
         "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
     ]:
-        return updated_node
+        fn = ensure_type(updated_node.name, cst.Name)
+        fn_name = fn
+        for d in reversed(updated_node.decorators):
+            # if decorator does not have arguments
+            if not m.matches(d.decorator, m.TypeOf(m.Call)):
+                # skip if it is not staticmethod or classmethod since these are
+                # meaningless in starlark
+                if d.decorator.value in ("staticmethod", "classmethod"):
+                    continue
+            fn = cst.Call(d.decorator, args=[cst.Arg(fn)])
+        result = cst.Assign(
+            targets=[cst.AssignTarget(target=fn_name)], value=fn
+        )
+        undecorated = updated_node.with_changes(decorators=[])
+        return cst.FlattenSentinel(
+            [undecorated, cst.SimpleStatementLine(body=[result])]
+        )
 
 
-class DecodeEncodeViaCodecs(codemod.ContextAwareTransformer):
+class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
     """
     str.decode(xxxx) => codecs.decode(xxxx)
     str.encode(xxxx) => codecs.encode(xxxx)
+
+    hex() => hexlify()
+    etc etc
     """
 
     pass
@@ -121,34 +148,66 @@ class DesugarBuiltinOperators(codemod.ContextAwareTransformer):
     - X @ Y = operator.matmul(x,y)..
     """
 
+    @m.call_if_inside(m.BinaryOperation(operator=m.Power()))
     def leave_BinaryOperation(
         self, original_node: "BinaryOperation", updated_node: "BinaryOperation"
     ) -> "BaseExpression":
-        return updated_node
+        return cst.Call(
+            func=cst.Name(value="pow"),
+            args=[
+                cst.Arg(updated_node.left),
+                cst.Arg(updated_node.right),
+            ],
+        )
 
 
 class DesugarSetSyntax(codemod.ContextAwareTransformer):
-    """
-        In [3]: ast.dump(ast.parse("set([1, 2])""))
-    Out[3]: "Module(body=[Expr(value=Call(func=Name(id='set', ctx=Load()), args=[List(e
-    lts=[Constant(value=1, kind=None), Constant(value=2, kind=None)], ctx=Load())], key
-    words=[]))], type_ignores=[])"
+    @m.call_if_inside(m.Assign(value=m.Set(elements=m.DoNotCare())))
+    def leave_Assign(
+        self, original_node: "Assign", updated_node: "Assign"
+    ) -> Union[
+        "BaseSmallStatement",
+        FlattenSentinel["BaseSmallStatement"],
+        RemovalSentinel,
+    ]:
+        """
+        x = {1,2} => x = set([1,2])
+        """
+        return self.convert_set_expr_to_fn(original_node, updated_node)
 
-    In [4]: ast.dump(ast.parse("set(1, 2)"))
-    Out[4]: "Module(body=[Expr(value=Call(func=Name(id='set', ctx=Load()), args=[Consta
-    nt(value=1, kind=None), Constant(value=2, kind=None)], keywords=[]))], type_ignores
-    =[])"
-    """
+    @m.call_if_inside(m.Expr(value=m.Set(elements=m.DoNotCare())))
+    def leave_Expr(
+        self, original_node: "Expr", updated_node: "Expr"
+    ) -> Union[
+        "BaseSmallStatement",
+        FlattenSentinel["BaseSmallStatement"],
+        RemovalSentinel,
+    ]:
+        """
+        {1,2} => set([1,2])
+        """
+        return self.convert_set_expr_to_fn(original_node, updated_node)
 
-    def leave_Set(
-        self, original_node: "Set", updated_node: "Set"
-    ) -> "BaseExpression":
-        return updated_node
-
-    def leave_SetComp(
-        self, original_node: "SetComp", updated_node: "SetComp"
-    ) -> "BaseExpression":
-        return updated_node
+    def convert_set_expr_to_fn(
+        self,
+        original_node: Union["Assign", "Expr"],
+        updated_node: Union["Assign", "Expr"],
+    ) -> Union[
+        "BaseSmallStatement",
+        FlattenSentinel["BaseSmallStatement"],
+        RemovalSentinel,
+    ]:
+        AddImportsVisitor.add_needed_import(self.context, "sets", "Set")
+        return updated_node.with_changes(
+            value=cst.Call(
+                func=cst.Name(value="Set"),
+                args=[
+                    cst.Arg(
+                        value=cst.List(elements=updated_node.value.elements)
+                    )
+                ],
+            )
+        )
 
 
 class RemoveExceptions(codemod.ContextAwareTransformer):

@@ -173,6 +173,10 @@ def larkify(filename, args):
         functionz.GeneratorToFunction(context),
         rewrite_comparisons.UnchainComparison(context),
         rewrite_comparisons.IsComparisonTransformer(context),
+        remove_exceptions.DesugarDecorators(context),
+        remove_exceptions.UnpackTargetAssignments(context),
+        remove_exceptions.DesugarBuiltinOperators(context),
+        remove_exceptions.DesugarSetSyntax(context),
         remove_exceptions.RemoveExceptions(context),
     ]
     # must run last otherwise messes up all the other transformers above

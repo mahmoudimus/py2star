@@ -1,5 +1,6 @@
 import logging
 import os.path
+import unittest
 from pathlib import Path
 from textwrap import dedent
 
@@ -153,6 +154,103 @@ class TestUnpackTargetAssignments(CodemodTest):
         after = """
         a = "xyz"
         b = a
+        """
+        self.assertCodemod(before, after)
+
+
+class TestDesugarDecorators(CodemodTest):
+    TRANSFORM = remove_exceptions.DesugarDecorators
+
+    def test_de_decorate_function(self):
+        before = """
+        @decorator
+        @staticmethod
+        def foo(a, b):
+            return True
+        """
+        after = """
+        def foo(a, b):
+            return True
+        foo = decorator(foo)
+        """
+        self.assertCodemod(before, after)
+
+    def test_de_decorate_function_with_arguments(self):
+        before = """
+        @decorator(1)
+        def foo(a, b):
+            return True
+        """
+        after = """
+        def foo(a, b):
+            return True
+        foo = decorator(1)(foo)
+        """
+        self.assertCodemod(before, after)
+
+    @unittest.skip("unsupported transform")
+    def test_de_decorate_class(self):
+        before = """
+        @decorator
+        class Foo(object):
+            pass
+        """
+        after = """
+        class Foo(object):
+            pass
+        Foo = decorator(Foo)
+        """
+        self.assertCodemod(before, after)
+
+
+class TestDesugarBuiltinOperators(CodemodTest):
+    TRANSFORM = remove_exceptions.DesugarBuiltinOperators
+
+    def test_desugar_power_operator(self):
+        before = """
+        x = 2 ** 3
+        """
+        after = """
+        x = pow(2, 3)
+        """
+        self.assertCodemod(before, after)
+
+    def test_desugar_power_operator_in_func(self):
+        before = """
+        def foo(x, y):
+            if x:
+                return x + x ** y
+            else:
+                return x | y
+        """
+        after = """
+        def foo(x, y):
+            if x:
+                return x + pow(x, y)
+            else:
+                return x | y
+        """
+        self.assertCodemod(before, after)
+
+
+class TestDesugarSetSyntax(CodemodTest):
+    TRANSFORM = remove_exceptions.DesugarSetSyntax
+
+    def test_set_expression_desugar(self):
+        before = """
+        {1,2}
+        """
+        after = """
+        Set([1,2])
+        """
+        self.assertCodemod(before, after)
+
+    def test_set_assignment_desugar(self):
+        before = """
+        x = {1,2}
+        """
+        after = """
+        x = Set([1,2])
         """
         self.assertCodemod(before, after)
 

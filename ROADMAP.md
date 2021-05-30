@@ -11,20 +11,13 @@
 
 ### desugaring
 
-- [ ] decorators should be desugared
-```python
-  # https://github.com/pydron/pydron/blob/a7b484dec8bcc2730ba9bd76bc63bf3362c05e4d/pydron/translation/dedecorator.py
-    def visit_FunctionDef(self, t):
-        t = self.generic_visit(t)
-        fn = Function(t.name, t.args, t.body)
-        for d in reversed(t.decorator_list):
-            fn = Call(d, [fn])
-        result = ast.Assign([ast.Name(t.name, store)], fn)
-        return ast.copy_location(result, t)
-```
+- [x] decorators should be desugared
 - [ ] set literals should be desugared from {} to sets.make()
-  
 
+More transform desugaring ideas here:
+- [pydron](https://github.com/pydron/pydron/tree/master/pydron/translation/dedecorator.py)
+- [pythran](https://github.com/serge-sans-paille/pythran/tree/master/pythran/transformations)
+- [typy](https://github.com/Procrat/typy/blob/master/typy/insuline.py)
   
 ### complex translations
 
@@ -35,10 +28,10 @@
 
 - integrate lib3to6?
   
-- rewrite:
-    - a = b = "xyz" to:
-      - a = "xyz"
-      - b = a
+- [x] rewrite:
+    - [x] a = b = "xyz" to:
+        - a = "xyz"
+        - b = a
     
 - decode()/encode() should be translated to codecs.encode()/codecs.decode()
 
@@ -72,3 +65,15 @@
 
 -  if methods are referenced in the class, then they should be ordered so that 
    they are defined first before invoking them in init? test this!
+
+
+
+## Ideas
+
+```python
+class Algo:
+   x = 1
+   y = 2
+```
+
+should just be migrated to a module called `Algo` with globals of x and y
