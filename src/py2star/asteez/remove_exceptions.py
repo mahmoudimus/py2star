@@ -83,21 +83,6 @@ class UnpackTargetAssignments(codemod.ContextAwareTransformer):
     ) -> Union[
         "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
     ]:
-        pass
-
-        # @m.call_if_inside(
-        #     m.Assign(
-        #         targets=[m.AtLeastN(n=2, matcher=m.AssignTarget())],
-        #         value=m.SimpleString(),
-        #     )
-        # )
-        # def leave_Assign(
-        #     self, original_node: "Assign", updated_node: "Assign"
-        # ) -> Union[
-        #     "BaseSmallStatement",
-        #     FlattenSentinel["BaseSmallStatement"],
-        #     RemovalSentinel,
-        # ]:
         assign_stmt = updated_node.body[0]
         stmts = [
             cst.SimpleStatementLine(
