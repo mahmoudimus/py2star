@@ -6,7 +6,7 @@ from textwrap import dedent
 import astunparse
 import libcst as cst
 import pytest
-from libcst.codemod import CodemodContext
+from libcst.codemod import CodemodContext, CodemodTest
 from libcst.metadata import FullyQualifiedNameProvider
 from py2star.asteez import (
     functionz,
@@ -141,6 +141,20 @@ b = True
 b != False
 """
     assert expected.strip() == rewritten.code.strip()
+
+
+class TestUnpackTargetAssignments(CodemodTest):
+    TRANSFORM = remove_exceptions.UnpackTargetAssignments
+
+    def test_unpack_target_assignments(self):
+        before = """
+        a = b = "xyz"
+        """
+        after = """
+        a = "xyz"
+        b = a
+        """
+        self.assertCodemod(before, after)
 
 
 @pytest.mark.xfail

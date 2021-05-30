@@ -1,6 +1,7 @@
 from typing import Union
 
 import libcst
+import libcst as cst
 from libcst import (
     BaseSmallStatement,
     BaseStatement,
@@ -11,6 +12,7 @@ from libcst import (
     codemod,
     ensure_type,
 )
+import libcst.matchers as m
 from libcst.codemod import CodemodContext
 from libcst.codemod.visitors import AddImportsVisitor
 from libcst.metadata import ParentNodeProvider
@@ -64,7 +66,68 @@ class UnpackTargetAssignments(codemod.ContextAwareTransformer):
     b = a
     """
 
-    pass
+    @m.call_if_inside(
+        m.SimpleStatementLine(
+            body=[
+                m.Assign(
+                    targets=[m.AtLeastN(n=2, matcher=m.AssignTarget())],
+                    value=m.SimpleString(),
+                )
+            ]
+        )
+    )
+    def leave_SimpleStatementLine(
+        self,
+        original_node: "SimpleStatementLine",
+        updated_node: "SimpleStatementLine",
+    ) -> Union[
+        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
+    ]:
+        pass
+
+        # @m.call_if_inside(
+        #     m.Assign(
+        #         targets=[m.AtLeastN(n=2, matcher=m.AssignTarget())],
+        #         value=m.SimpleString(),
+        #     )
+        # )
+        # def leave_Assign(
+        #     self, original_node: "Assign", updated_node: "Assign"
+        # ) -> Union[
+        #     "BaseSmallStatement",
+        #     FlattenSentinel["BaseSmallStatement"],
+        #     RemovalSentinel,
+        # ]:
+        assign_stmt = updated_node.body[0]
+        stmts = [
+            cst.SimpleStatementLine(
+                body=[
+                    cst.Assign(
+                        targets=[
+                            cst.AssignTarget(
+                                target=assign_stmt.targets[0].target
+                            ),
+                        ],
+                        value=assign_stmt.value,
+                    ),
+                ]
+            )
+        ]
+        # idx here starts at 0, so it is -1 from current pointer of targets
+        for idx, t in enumerate(assign_stmt.targets[1:]):
+            stmts.append(
+                cst.SimpleStatementLine(
+                    body=[
+                        cst.Assign(
+                            targets=[
+                                cst.AssignTarget(target=t.target),
+                            ],
+                            value=assign_stmt.targets[idx].target,
+                        ),
+                    ]
+                )
+            )
+        return cst.FlattenSentinel(stmts)
 
 
 class DesugarBuiltinOperators(codemod.ContextAwareTransformer):
@@ -127,11 +190,11 @@ class RemoveExceptions(codemod.ContextAwareTransformer):
         FlattenSentinel["BaseSmallStatement"],
         RemovalSentinel,
     ]:
-        exc_name = ensure_type(updated_node.exc, libcst.Call)
+        exc_name = ensure_type(updated_node.exc, cst.Call)
         args2 = []
         for a in exc_name.args:
-            if isinstance(a.value, libcst.BinaryOperation):
-                newval = libcst.parse_expression(
+            if isinstance(a.value, cst.BinaryOperation):
+                newval = cst.parse_expression(
                     f'"{exc_name.func.value}: {a.value.left.raw_value}"'
                 )
                 args2.append(
@@ -140,33 +203,33 @@ class RemoveExceptions(codemod.ContextAwareTransformer):
                 # args2.append(
                 #     a.with_changes(
                 #         value=a.value.with_changes(
-                #             left=libcst.SimpleString(
+                #             left=cst.SimpleString(
                 #                 value=f'"{exc_name.func.value}: {a.value.left.raw_value}"'
                 #             )
                 #         )
                 #     )
                 # )
-            elif isinstance(a.value, libcst.SimpleString):
+            elif isinstance(a.value, cst.SimpleString):
                 args2.append(
                     a.with_changes(
-                        value=libcst.SimpleString(
+                        value=cst.SimpleString(
                             value=f'"{exc_name.func.value}: {a.value.raw_value}"'
                         )
                     )
                 )
 
-        rval = libcst.Call(func=libcst.Name(value=f"Error"), args=args2)
+        rval = cst.Call(func=cst.Name(value=f"Error"), args=args2)
         AddImportsVisitor.add_needed_import(
             self.context, "option.result", "Error"
         )
-        upd = libcst.Return(value=rval)
-        return libcst.FlattenSentinel([upd])
+        upd = cst.Return(value=rval)
+        return cst.FlattenSentinel([upd])
 
         # return Result.Error("JWKError: " + args)
 
         # return updated_node.with_changes(
         #     body=[
-        #         libcst.Call(
+        #         cst.Call(
         #
         #         )
         #     ]
