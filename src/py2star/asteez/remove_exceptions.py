@@ -394,30 +394,17 @@ class CommentTopLevelTryBlocks(codemod.ContextAwareTransformer):
         # return updated_node
 
     def visit_Try(self, node: "Try") -> typing.Optional[bool]:
-        try:
-            pos = self.get_metadata(cst.metadata.PositionProvider, node)
-            self._startpos = pos.start
-        except KeyError:
-            pass
+        pos = self.get_metadata(cst.metadata.PositionProvider, node)
+        self._startpos = pos.start
 
     def leave_Try(
         self, original_node: "Try", updated_node: "Try"
     ) -> Union[
         "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
     ]:
-        try:
-            pos = self.get_metadata(
-                cst.metadata.PositionProvider, original_node
-            )
-        except KeyError:
-            pass
-        else:
-            self._endpos = pos.end
-
-        try:
-            scope = self.get_metadata(cst.metadata.ScopeProvider, original_node)
-        except KeyError:
-            return updated_node
+        pos = self.get_metadata(cst.metadata.PositionProvider, original_node)
+        self._endpos = pos.end
+        scope = self.get_metadata(cst.metadata.ScopeProvider, original_node)
 
         # # The below does not work for some reason
         # # TODO: figure it out
