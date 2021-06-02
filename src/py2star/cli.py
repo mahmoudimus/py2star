@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import tokenize
+from functools import partial
 from lib2to3 import refactor
 from pathlib import Path
 from typing import Optional, Pattern
@@ -128,6 +129,7 @@ def onfixes(filename, fixers, doprint=True):
             return
     try:
         with open(filename, encoding=encoding) as f:
+            # return f.read()
             r = ReIndenter(f)
     except IOError as msg:
         logger.exception("%s: I/O Error: %s", filename, msg)
@@ -158,57 +160,78 @@ def larkify(filename, args):
     fixers = args.fixers
     out = onfixes(filename, fixers, doprint=False)
     program = libcst.parse_module(out)
-    wrapper = libcst.MetadataWrapper(program)
-
-    context = CodemodContext(
-        wrapper=wrapper,
-        filename=filename,
-        full_module_name=_full_module_name(args.pkg_path, filename),
-    )
 
     transformers = [
-        remove_types.RemoveTypesTransformer(context),
-        rewrite_loopz.WhileToForLoop(context),
-        functionz.RewriteTypeChecks(context),
-        functionz.GeneratorToFunction(context),
-        rewrite_comparisons.UnchainComparison(context),
-        rewrite_comparisons.IsComparisonTransformer(context),
-        remove_exceptions.DesugarDecorators(context),
-        remove_exceptions.UnpackTargetAssignments(context),
-        remove_exceptions.DesugarBuiltinOperators(context),
-        remove_exceptions.DesugarSetSyntax(context),
-        remove_exceptions.RemoveExceptions(context),
+        remove_exceptions.CommentTopLevelTryBlocks,
+        remove_exceptions.DesugarDecorators,
+        remove_exceptions.UnpackTargetAssignments,
+        remove_exceptions.DesugarBuiltinOperators,
+        remove_exceptions.DesugarSetSyntax,
+        rewrite_loopz.WhileToForLoop,
+        functionz.RewriteTypeChecks,
+        functionz.GeneratorToFunction,
+        rewrite_comparisons.UnchainComparison,
+        rewrite_comparisons.IsComparisonTransformer,
+        remove_types.RemoveTypesTransformer,
+        remove_exceptions.RemoveExceptions,
     ]
+
+    # wrapper = libcst.MetadataWrapper(program)
+    # deps = set()
+    # for l in transformers:
+    #     deps.update(l.get_inherited_dependencies())
+    # wrapper.resolve_many(list(deps))
+    # context = CodemodContext(
+    #     wrapper=wrapper,
+    #     filename=filename,
+    #     full_module_name=_full_module_name(args.pkg_path, filename),
+    # )
+    for l in transformers:
+        wrapper = libcst.MetadataWrapper(program)
+        # wrapper.resolve_many(l.get_inherited_dependencies())
+        context = CodemodContext(
+            wrapper=wrapper,
+            filename=filename,
+            full_module_name=_full_module_name(args.pkg_path, filename),
+        )
+        t = l(context)
+        logger.debug("running transformer: %s", t)
+        # program = program.visit(t)
+        with t.resolve(wrapper):
+            program = program.visit(t)
+
     # must run last otherwise messes up all the other transformers above
     if args.for_tests:
-        transformers += [
-            rewrite_class.FunctionParameterStripper(context, ["self"]),
-            rewrite_class.AttributeGetter(context, ["self"]),
+        transformers = [
+            partial(rewrite_class.FunctionParameterStripper, params=["self"]),
+            partial(rewrite_class.AttributeGetter, params=["self"]),
         ]
     else:
         # we don't want class to function rewriter for tests since
         # there's already a fixer for tests based on lib2to3
-        transformers.append(
-            rewrite_class.ClassToFunctionRewriter(
-                context, remove_decorators=False
+        transformers = [
+            partial(
+                rewrite_class.ClassToFunctionRewriter, remove_decorators=False
             )
-        )
+        ]
 
-    for l in transformers:
-        logger.debug("running transformer: %s", l)
-        with l.resolve(wrapper):
-            program = program.visit(l)
-
-    transformers = [
-        AddImportsVisitor(context),
+    transformers += [
+        AddImportsVisitor,
         # RemoveImportsVisitor(context),
-        rewrite_imports.RewriteImports(context),
+        rewrite_imports.RewriteImports,
     ]
 
     for l in transformers:
-        logger.debug("running transformer: %s", l)
-        with l.resolve(wrapper):
-            program = program.visit(l)
+        wrapper = libcst.MetadataWrapper(program)
+        context = CodemodContext(
+            wrapper=wrapper,
+            filename=filename,
+            full_module_name=_full_module_name(args.pkg_path, filename),
+        )
+        t = l(context)
+        logger.debug("running transformer: %s", t)
+        with t.resolve(wrapper):
+            program = program.visit(t)
     print(program.code)
     # rewriter = rewrite_imports.RewriteImports(context)
     # rewritten = wrapper.visit(rewriter)

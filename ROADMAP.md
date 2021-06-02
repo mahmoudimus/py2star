@@ -1,5 +1,6 @@
- # TODO
- 
+ # Roadmap
+
+
 ### imports     
 
 - [ ] from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
@@ -12,7 +13,7 @@
 ### desugaring
 
 - [x] decorators should be desugared
-- [ ] set literals should be desugared from {} to sets.make()
+- [x] set literals should be desugared from {} to sets.make()
 
 More transform desugaring ideas here:
 - [pydron](https://github.com/pydron/pydron/tree/master/pydron/translation/dedecorator.py)
@@ -22,12 +23,15 @@ More transform desugaring ideas here:
 ### complex translations
 
 - rewrite try/except statements
-
+- sort imports so that they come *before* anything else in the file 
+- solve the from . import X case
+- with statements
+- del 
 - Rewrite lib2to3 fixers to libcst
  - Particularly the test generation stuff should be easy to port tests
 
-- integrate lib3to6?
-  
+- for/else (replace)
+
 - [x] rewrite:
     - [x] a = b = "xyz" to:
         - a = "xyz"
@@ -45,19 +49,18 @@ More transform desugaring ideas here:
 
 ### operators
 
-- ** to pow
-- X @ Y = operator.matmul(x,y)..
+- [x] ** to pow
+- [ ] X @ Y = operator.matmul(x,y)..
 
 
 ### bytes:
   
 - [x] starlark bytes support was merged into starlarky (upstream!) 
   
-- if byte literals are in ascii range, do not escape them by converting them to 
-  hex digits 
-  
-  i.e. bytes([0x70, 0x61, 0x73, 0x73, 0x77, 0x6F, 0x72, 0x64]) == bytes("password", encoding="utf-8") == b"password"
-  
+    - if byte literals are in ascii range, do not escape them by converting them to 
+      hex digits 
+      
+      i.e. bytes([0x70, 0x61, 0x73, 0x73, 0x77, 0x6F, 0x72, 0x64]) == bytes("password", encoding="utf-8") == b"password"
 
 ### misc:
 
@@ -65,7 +68,12 @@ More transform desugaring ideas here:
 
 -  if methods are referenced in the class, then they should be ordered so that 
    they are defined first before invoking them in init? test this!
+   
 
+## TODO
+
+- integrate lib3to6 / pybackwards / python-future?
+- the cli should really be something similar to [instagram/fixit](https://github.com/instagram/fixit)
 
 
 ## Ideas

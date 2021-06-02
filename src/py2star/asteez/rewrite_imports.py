@@ -221,37 +221,40 @@ class RewriteImports(codemod.ContextAwareTransformer):
         relative_imports = len(updated_node.relative)
         if module_attr:
             mod_name = get_full_name_for_node(module_attr)
-            if relative_imports == 0:
-                return mod_name
-            # we are a relative import!
-            if self.context.full_module_name is None:
-                print(
-                    "relative import",
-                    mod_name,
-                    "trans-compilation will need to to be run with -p command",
-                    "because root mod name is ambiguous..",
-                    file=sys.stderr,
-                )
-                name_root = ""
-            else:
-                # split the full module name to find out where we are
-                paths = self.context.full_module_name.split(".")
-                paths.reverse()
-                # based on how many relative dots, we will make this an
-                # absolute qualifier
-                # ... jose.backends.pycrypto_backend
-                # ... [pycrypto_backend, backends, jose]
-                # ... [[pycrypto_backend, backends, jose][len(dots)]
-                # ... from .base import Key => jose.backends.base
-                # ... from ..utils import Y => jose.utils.Y
-                name_root = ".".join(reversed(paths[relative_imports:])) + "."
-            # if len(updated_node.names) != 1:
-            #     print(
-            #         "updated_node.names != 1, will just pick first one",
-            #         file=sys.stderr,
-            #     )
-            return f"{name_root}{mod_name}"
-        assert False, "expected unreachable point"
+        else:
+            mod_name = "."  # from . import X
+
+        if relative_imports == 0:
+            return mod_name
+
+        # we are a relative import!
+        if self.context.full_module_name is None and mod_name == ".":
+            print(
+                "relative import",
+                mod_name,
+                "trans-compilation will need to to be run with -p command",
+                "because root mod name is ambiguous..",
+                file=sys.stderr,
+            )
+            name_root = ""
+        else:
+            # split the full module name to find out where we are
+            paths = self.context.full_module_name.split(".")
+            paths.reverse()
+            # based on how many relative dots, we will make this an
+            # absolute qualifier
+            # ... jose.backends.pycrypto_backend
+            # ... [pycrypto_backend, backends, jose]
+            # ... [[pycrypto_backend, backends, jose][len(dots)]
+            # ... from .base import Key => jose.backends.base
+            # ... from ..utils import Y => jose.utils.Y
+            name_root = ".".join(reversed(paths[relative_imports:])) + "."
+        # if len(updated_node.names) != 1:
+        #     print(
+        #         "updated_node.names != 1, will just pick first one",
+        #         file=sys.stderr,
+        #     )
+        return f"{name_root}{mod_name}"
 
     @staticmethod
     def _compile_to_larky_load(args, updated_node):

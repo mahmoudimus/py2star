@@ -1,4 +1,4 @@
-from .fix_declass import FixDeclass
+from ._fix_declass import FixDeclass
 
 
 class FixUnittests(FixDeclass):

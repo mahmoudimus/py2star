@@ -88,21 +88,32 @@ for _while_ in range(_WHILE_LOOP_EMULATION_ITERATION):
     assert expected.code.strip() == rewritten.code.strip()
 
 
-def test_generator_to_comprehension():
-    context = CodemodContext()
-    tree = cst.parse_module(
+class TestGeneratorAndYieldTransformations(CodemodTest):
+    TRANSFORM = functionz.GeneratorToFunction
+
+    def test_yield_to_return(self):
+        before = """
+        def iter():
+            for i in range(10):
+                yield i
         """
-c = range(12)
-x = (i for i in c)
-"""
-    )
-    gf = functionz.GeneratorToFunction(context)
-    rewritten = tree.visit(gf)
-    expected = """
-c = range(12)
-x = [i for i in c]
-"""
-    assert expected == str(rewritten.code)
+        after = """
+        def iter():
+            for i in range(10):
+                return i
+        """
+        self.assertCodemod(before, after)
+
+    def test_generator_to_comprehension(self):
+        before = """
+        c = range(12)
+        x = (i for i in c)
+        """
+        after = """
+        c = range(12)
+        x = [i for i in c]
+        """
+        self.assertCodemod(before, after)
 
 
 def test_unchain_comparison():
@@ -142,6 +153,15 @@ b = True
 b != False
 """
     assert expected.strip() == rewritten.code.strip()
+
+
+class MetadataResolvingCodemodTest(CodemodTest):
+    def _get_context_override(self, before):
+        mod = cst.MetadataWrapper(
+            cst.parse_module(self.make_fixture_data(before))
+        )
+        mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
+        return CodemodContext(wrapper=mod)
 
 
 class TestUnpackTargetAssignments(CodemodTest):
@@ -255,73 +275,242 @@ class TestDesugarSetSyntax(CodemodTest):
         self.assertCodemod(before, after)
 
 
-@pytest.mark.xfail
-def test_remove_exceptions():
-    """
-    try:
-        x(y(f(xx)))
-    except Exception:
-        xx
+class TestTopLevelExceptionRemoval(MetadataResolvingCodemodTest):
+    TRANSFORM = remove_exceptions.CommentTopLevelTryBlocks
 
-    _tmp = safe(f)(xx).map(y).map(x)
-    :return:
-    """
-    # https://github.com/MaT1g3R/option/issues/7
-    tree = cst.parse_module(
+    def test_remove_top_level_try(self):
+        before = """
+        try:
+            from _cexcept import *
+        except ImportError:
+            pass
+            
+        def foo(x):
+            try:
+                x[0] = 'a'
+            except IndexError:
+                pass
         """
-def foo(a, b, c):
-    try:
-        a(b, c)
-    except ZeroDivisionError:
-        raise ValueError("cannot divide by zero")
-    except Exception:
-        raise TypeError("What?")
-"""
-    )
-    context = CodemodContext()
-    c2frw = remove_exceptions.RemoveExceptions(context)
-    rewritten = tree.visit(c2frw)
-    expected = """
-def foo(a, b, c):
-    _tmp = safe(a)(b, c)
-    if _tmp.is_ok:
-        return _tmp.unwrap()
-    if _tmp.
-try_(foo, 
-     except_=[
-       Error('ZeroDivisionError: ValueError: cannot divide by zero'),
-       Error('Exception: TypeError: What?')
-    ],
-    finally_=[
-    ])
-  .except_(ZeroDivisionError, ValueError("cannot divide by zero"))
-  .except_(Exception, TypeError("What?"))
+        after = """
+        # try:
+        #     from _cexcept import *
+        # except ImportError:
+        #     pass
 
-safe(foo)
-  .
-"""
-    # using split() avoids having to trim trailing whitespace.
-    assert _remove_empty_lines(rewritten.code) == _remove_empty_lines(expected)
-
-
-def test_rewrite_raise_to_error_object():
-    tree = cst.parse_module(
+        def foo(x):
+            try:
+                x[0] = 'a'
+            except IndexError:
+                pass
         """
-def foo(a, b, c):
-    if not a:
-        raise ValueError("a: %s is not truthy!" % (a,))
-"""
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+    def test_remove_from_ElementTree(self):
+        with open("../ElementTree.py") as f:
+            before = f.read()
+        after = """
+       # try:
+       #     from _cexcept import *
+       # except ImportError:
+       #     pass
+
+       def foo(x):
+           try:
+               x[0] = 'a'
+           except IndexError:
+               pass
+       """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+
+class TestRewriteExceptions(MetadataResolvingCodemodTest):
+    TRANSFORM = remove_exceptions.RemoveExceptions
+
+    def test_map_simple_raise_statement_to_result_error(self):
+        before = """
+        def foo(a, b, c):
+            if not a:
+                raise ValueError("a: %s is not truthy!" % (a,))
+        """
+        after = """
+        def foo(a, b, c):
+            if not a:
+                return Error("ValueError: a: %s is not truthy!" % (a,))
+        """
+        mod = cst.MetadataWrapper(
+            cst.parse_module(self.make_fixture_data(before))
+        )
+        mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
+
+        self.assertCodemod(
+            before, after, context_override=CodemodContext(wrapper=mod)
+        )
+
+    #
+    # class Element:
+    #     """An XML element.
+    #
+    #     This class is the reference implementation of the Element interface.
+    #
+    #     An element's length is its number of subelements.  That means if you
+    #     want to check if an element is truly empty, you should check BOTH
+    #     its length AND its text attribute.
+    #
+    #     The element tag, attribute names, and attribute values can be either
+    #     bytes or strings.
+    #
+    #     *tag* is the element name.  *attrib* is an optional dictionary containing
+    #     element attributes. *extra* are additional element attributes given as
+    #     keyword arguments.
+    #
+    #     Example form:
+    #         <tag attrib>text<child/>...</tag>tail
+    #
+    #     """
+    #
+    #     tag = None
+    #     """The element's name."""
+    #
+    #     attrib = None
+    #     """Dictionary of the element's attributes."""
+    #
+    #     text = None
+    #     """
+    #     Text before first subelement. This is either a string or the value None.
+    #     Note that if there is no text, this attribute may be either
+    #     None or the empty string, depending on the parser.
+    #
+    #     """
+    #
+    #     tail = None
+    #     """
+    #     Text after this element's end tag, but before the next sibling element's
+    #     start tag.  This is either a string or the value None.  Note that if there
+    #     was no text, this attribute may be either None or an empty string,
+    #     depending on the parser.
+    #
+    #     """
+    #
+    #     def __init__(self, tag, attrib={}, **extra):
+    #         if not isinstance(attrib, dict):
+    #             raise TypeError(
+    #                 "attrib must be dict, not %s" % (attrib.__class__.__name__,)
+    #             )
+    #         attrib = attrib.copy()
+    #         attrib.update(extra)
+    #         self.tag = tag
+    #         self.attrib = attrib
+    #         self._children = []
+
+    # def _fixname(self, key):
+    # # expand qname, and convert name string to ascii, if possible
+    # try:
+    #     name = self._names[key]
+    # except KeyError:
+    #     name = key
+    #     if "}" in name:
+    #         name = "{" + name
+    #     self._names[key] = name
+    # return name
+
+    #     rval = safe(self.parser.Parse)("", 1) # end of data
+    # if rval.is_err:
+    #     # self._raiseerror(v)
+    #     return rval
+
+    #     try:
+    #     return _IterParseIterator(source, events, parser, close_source)
+    # except:
+    #     if close_source:
+    #         source.close()
+    #     raise
+    def test_map_raise_statement_with_func(self):
+        before = """
+        class Foo(object):
+        
+            def _raiseerror(self, value):
+                err = ParseError(value)
+                err.code = value.code
+                err.position = value.lineno, value.offset
+                raise err
+            
+            def close(self):
+                try:
+                    self.parser.Parse("", 1) # end of data
+                except self._error as v:
+                    self._raiseerror(v)
+        """
+        after = """
+        class Foo(object):
+        
+            def _raiseerror(self, value):
+                err = ParseError(value)
+                err.code = value.code
+                err.position = value.lineno, value.offset
+                # PY2LARKY: pay attention to this!
+                return err
+            
+            def close(self):
+                try:
+                    self.parser.Parse("", 1) # end of data
+                except self._error as v:
+                    self._raiseerror(v)
+        """
+        mod = cst.MetadataWrapper(
+            cst.parse_module(self.make_fixture_data(before))
+        )
+        mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
+
+        self.assertCodemod(
+            before, after, context_override=CodemodContext(wrapper=mod)
+        )
+
+    @unittest.skip(
+        "currently unsupported. see https://github.com/MaT1g3R/option/issues/7"
     )
-    context = CodemodContext()
-    c2frw = remove_exceptions.RemoveExceptions(context)
-    rewritten = tree.visit(c2frw)
-    expected = """
-def foo(a, b, c):
-    if not a:
-        return Error("ValueError: a: %s is not truthy!" % (a,))
-"""
-    # using split() avoids having to trim trailing whitespace.
-    assert _remove_empty_lines(rewritten.code) == _remove_empty_lines(expected)
+    def test_remove_exceptions(self):
+        """
+        try:
+            x(y(f(xx)))
+        except Exception:
+            xx
+
+        _tmp = safe(f)(xx).map(y).map(x)
+        :return:
+        """
+        # https://github.com/MaT1g3R/option/issues/7
+        before = """
+        def foo(a, b, c):
+            try:
+                a(b, c)
+            except ZeroDivisionError:
+                raise ValueError("cannot divide by zero")
+            except Exception:
+                raise TypeError("What?")
+        """
+        after = """
+        def foo(a, b, c):
+            _tmp = safe(a)(b, c)
+            if _tmp.is_ok:
+                return _tmp.unwrap()
+            if _tmp.
+        try_(foo, 
+             except_=[
+               Error('ZeroDivisionError: ValueError: cannot divide by zero'),
+               Error('Exception: TypeError: What?')
+            ],
+            finally_=[
+            ])
+          .except_(ZeroDivisionError, ValueError("cannot divide by zero"))
+          .except_(Exception, TypeError("What?"))
+        
+        safe(foo)
+          .
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
 
 
 def test_rewrite_typechecks():
