@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import os.path
 import unittest
@@ -306,24 +307,6 @@ class TestTopLevelExceptionRemoval(MetadataResolvingCodemodTest):
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
 
-    def test_remove_from_ElementTree(self):
-        with open("../ElementTree.py") as f:
-            before = f.read()
-        after = """
-       # try:
-       #     from _cexcept import *
-       # except ImportError:
-       #     pass
-
-       def foo(x):
-           try:
-               x[0] = 'a'
-           except IndexError:
-               pass
-       """
-        ctx = self._get_context_override(before)
-        self.assertCodemod(before, after, context_override=ctx)
-
 
 class TestRewriteExceptions(MetadataResolvingCodemodTest):
     TRANSFORM = remove_exceptions.RemoveExceptions
@@ -612,55 +595,311 @@ def _remove_empty_lines(mystr):
     return [line for line in mystr.split("\n") if line.strip() != ""]
 
 
-def test_rewrite_imports():
-    sample = """
-    from __future__ import print_function
-    
-    import unittest
-    from binascii import unhexlify
-    
-    import Crypto.Hash.SHA256
-    # TODO: fix this one! ==> from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
-    from Crypto.SelfTest.st_common import list_test_cases
-    from Crypto.SelfTest.loader import load_test_vectors, load_test_vectors_wycheproof
-    
-    from Crypto.Util.py3compat import tobytes, bchr
-    from Crypto.Cipher import AES
-    from Crypto.Hash import SHAKE128, SHA256
-    
-    from Crypto.Util.strxor import strxor
-    # load("@stdlib//unittest")
-    """
-    tree = cst.parse_module(dedent(sample))
-    pkg_root = os.path.basename(__file__)
-    wrapper = cst.MetadataWrapper(
-        tree,
-        cache={
-            FullyQualifiedNameProvider: FullyQualifiedNameProvider.gen_cache(
-                Path(""), [pkg_root], None
-            ).get(pkg_root, "")
-        },
-    )
-    wrapper.resolve_many(rewrite_imports.RewriteImports.METADATA_DEPENDENCIES)
-    rwi = rewrite_imports.RewriteImports(
-        context=CodemodContext(wrapper=wrapper, filename=pkg_root)
-    )
-    rewritten = wrapper.visit(rwi)
-    expected = """
-    load("@stdlib//unittest", unittest="unittest")
-    load("@stdlib//binascii", unhexlify="unhexlify")
-    
-    load("@vendor//Crypto/Hash", SHA256="SHA256")
-    # TODO: fix this one! ==> from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
-    load("@vendor//Crypto/SelfTest/st_common", list_test_cases="list_test_cases")
-    load("@vendor//Crypto/SelfTest/loader", load_test_vectors="load_test_vectors", load_test_vectors_wycheproof="load_test_vectors_wycheproof")
-    
-    load("@vendor//Crypto/Util/py3compat", tobytes="tobytes", bchr="bchr")
-    load("@vendor//Crypto/Cipher", AES="AES")
-    load("@vendor//Crypto/Hash", SHAKE128="SHAKE128", SHA256="SHA256")
-    
-    load("@vendor//Crypto/Util/strxor", strxor="strxor")
-    # load("@stdlib//unittest")    
-"""
-    # print(rewritten.code.strip())
-    assert dedent(expected).strip() == dedent(rewritten.code).strip()
+class TestRewriteImporting(MetadataResolvingCodemodTest):
+
+    TRANSFORM = rewrite_imports.RewriteImports
+
+    # def test_relative_import_from_ElementTree(self):
+    #     with open("../ElementTree.py") as f:
+    #         before = f.read()
+    #     after = """
+    #    # try:
+    #    #     from _cexcept import *
+    #    # except ImportError:
+    #    #     pass
+    #
+    #    def foo(x):
+    #        try:
+    #            x[0] = 'a'
+    #        except IndexError:
+    #            pass
+    #    """
+    #     ctx = self._get_context_override(before)
+    #     ctx = dataclasses.replace(ctx,
+    #                               full_module_name="xml.etree.ElementTree")
+    #     self.assertCodemod(before, after, context_override=ctx)
+
+    def test_rewrite_imports(self):
+        before = """
+        from __future__ import print_function
+        
+        import unittest
+        from binascii import unhexlify
+        
+        import Crypto.Hash.SHA256
+        # TODO: fix this one! ==> from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
+        from Crypto.SelfTest.st_common import list_test_cases
+        from Crypto.SelfTest.loader import load_test_vectors, load_test_vectors_wycheproof
+        
+        from Crypto.Util.py3compat import tobytes, bchr
+        from Crypto.Cipher import AES
+        from Crypto.Hash import SHAKE128, SHA256
+        
+        from Crypto.Util.strxor import strxor
+        # load("@stdlib//unittest")
+        """
+        # pkg_root = os.path.basename(__file__)
+        # wrapper = cst.MetadataWrapper(
+        #  tree,
+        #  cache={
+        #    FullyQualifiedNameProvider: FullyQualifiedNameProvider.gen_cache(
+        #      Path(""), [pkg_root], None
+        #    ).get(pkg_root, "")
+        #  },
+        # )
+        # wrapper.resolve_many(rewrite_imports.RewriteImports.METADATA_DEPENDENCIES)
+        # rwi = rewrite_imports.RewriteImports(
+        #     context=CodemodContext(wrapper=wrapper, filename=pkg_root)
+        # )
+        # rewritten = wrapper.visit(rwi)
+        after = """
+        load("@stdlib//unittest", unittest="unittest")
+        load("@stdlib//binascii", unhexlify="unhexlify")
+        
+        load("@vendor//Crypto/Hash", SHA256="SHA256")
+        # TODO: fix this one! ==> from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
+        load("@vendor//Crypto/SelfTest/st_common", list_test_cases="list_test_cases")
+        load("@vendor//Crypto/SelfTest/loader", load_test_vectors="load_test_vectors", load_test_vectors_wycheproof="load_test_vectors_wycheproof")
+        
+        load("@vendor//Crypto/Util/py3compat", tobytes="tobytes", bchr="bchr")
+        load("@vendor//Crypto/Cipher", AES="AES")
+        load("@vendor//Crypto/Hash", SHAKE128="SHAKE128", SHA256="SHA256")
+        
+        load("@vendor//Crypto/Util/strxor", strxor="strxor")
+        # load("@stdlib//unittest")
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+        # print(rewritten.code.strip())
+        # assert dedent(expected).strip() == dedent(rewritten.code).strip()
+
+
+class TestImportSorting(MetadataResolvingCodemodTest):
+
+    TRANSFORM = rewrite_imports.LarkyImportSorter
+
+    def test_import_sorters(self):
+        before = """
+        '''Lightweight XML support for Python.
+        
+         XML is an inherently hierarchical data format, and the most natural way to
+         represent it is with a tree.  This module has two classes for this purpose:
+        
+            1. ElementTree represents the whole XML document as a tree and
+        
+            2. Element represents a single node in this tree.
+        
+         Interactions with the whole document (reading and writing to/from files) are
+         usually done on the ElementTree level.  Interactions with a single XML element
+         and its sub-elements are done on the Element level.
+        
+         Element is a flexible container object designed to store hierarchical data
+         structures in memory. It can be described as a cross between a list and a
+         dictionary.  Each Element has a number of properties associated with it:
+        
+            'tag' - a string containing the element's name.
+        
+            'attributes' - a Python dictionary storing the element's attributes.
+        
+            'text' - a string containing the element's text content.
+        
+            'tail' - an optional string containing text after the element's end tag.
+        
+            And a number of child elements stored in a Python sequence.
+        
+         To create an element instance, use the Element constructor,
+         or the SubElement factory function.
+        
+         You can also use the ElementTree class to wrap an element structure
+         and convert it to and from XML.
+         
+         '''
+        
+        # ---------------------------------------------------------------------
+        # Licensed to PSF under a Contributor Agreement.
+        # See http://www.python.org/psf/license for licensing details.
+        #
+        # ElementTree
+        # Copyright (c) 1999-2008 by Fredrik Lundh.  All rights reserved.
+        #
+        # fredrik@pythonware.com
+        # http://www.pythonware.com
+        # --------------------------------------------------------------------
+        # The ElementTree toolkit is
+        #
+        # Copyright (c) 1999-2008 by Fredrik Lundh
+        #
+        # By obtaining, using, and/or copying this software and/or its
+        # associated documentation, you agree that you have read, understood,
+        # and will comply with the following terms and conditions:
+        #
+        # Permission to use, copy, modify, and distribute this software and
+        # its associated documentation for any purpose and without fee is
+        # hereby granted, provided that the above copyright notice appears in
+        # all copies, and that both that copyright notice and this permission
+        # notice appear in supporting documentation, and that the name of
+        # Secret Labs AB or the author not be used in advertising or publicity
+        # pertaining to distribution of the software without specific, written
+        # prior permission.
+        #
+        # SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD
+        # TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANT-
+        # ABILITY AND FITNESS.  IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR
+        # BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY
+        # DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+        # WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS
+        # ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
+        # OF THIS SOFTWARE.
+        # --------------------------------------------------------------------
+        
+        __all__ = [
+            # public symbols
+            "Comment",
+            "dump",
+            "Element",
+            "ElementTree",
+            "fromstring",
+            "fromstringlist",
+            "iselement",
+            "iterparse",
+            "parse",
+            "ParseError",
+            "PI",
+            "ProcessingInstruction",
+            "QName",
+            "SubElement",
+            "tostring",
+            "tostringlist",
+            "TreeBuilder",
+            "VERSION",
+            "XML",
+            "XMLID",
+            "XMLParser",
+            "register_namespace",
+        ]
+        
+        VERSION = "1.3.0"
+        
+        load("@stdlib//sys", sys="sys")
+        load("@stdlib//re", re="re")
+        load("@stdlib//warnings", warnings="warnings")
+        load("@stdlib//io", io="io")
+        load("@stdlib//contextlib", contextlib="contextlib")
+        
+        load("@stdlib//xml/etree", ElementPath="ElementPath")
+        load("@vendor//option/result", Error="Error")
+        load("@stdlib//types", types="types")
+        """
+
+        after = """
+        '''Lightweight XML support for Python.
+        
+         XML is an inherently hierarchical data format, and the most natural way to
+         represent it is with a tree.  This module has two classes for this purpose:
+        
+            1. ElementTree represents the whole XML document as a tree and
+        
+            2. Element represents a single node in this tree.
+        
+         Interactions with the whole document (reading and writing to/from files) are
+         usually done on the ElementTree level.  Interactions with a single XML element
+         and its sub-elements are done on the Element level.
+        
+         Element is a flexible container object designed to store hierarchical data
+         structures in memory. It can be described as a cross between a list and a
+         dictionary.  Each Element has a number of properties associated with it:
+        
+            'tag' - a string containing the element's name.
+        
+            'attributes' - a Python dictionary storing the element's attributes.
+        
+            'text' - a string containing the element's text content.
+        
+            'tail' - an optional string containing text after the element's end tag.
+        
+            And a number of child elements stored in a Python sequence.
+        
+         To create an element instance, use the Element constructor,
+         or the SubElement factory function.
+        
+         You can also use the ElementTree class to wrap an element structure
+         and convert it to and from XML.
+
+         '''
+        
+        # ---------------------------------------------------------------------
+        # Licensed to PSF under a Contributor Agreement.
+        # See http://www.python.org/psf/license for licensing details.
+        #
+        # ElementTree
+        # Copyright (c) 1999-2008 by Fredrik Lundh.  All rights reserved.
+        #
+        # fredrik@pythonware.com
+        # http://www.pythonware.com
+        # --------------------------------------------------------------------
+        # The ElementTree toolkit is
+        #
+        # Copyright (c) 1999-2008 by Fredrik Lundh
+        #
+        # By obtaining, using, and/or copying this software and/or its
+        # associated documentation, you agree that you have read, understood,
+        # and will comply with the following terms and conditions:
+        #
+        # Permission to use, copy, modify, and distribute this software and
+        # its associated documentation for any purpose and without fee is
+        # hereby granted, provided that the above copyright notice appears in
+        # all copies, and that both that copyright notice and this permission
+        # notice appear in supporting documentation, and that the name of
+        # Secret Labs AB or the author not be used in advertising or publicity
+        # pertaining to distribution of the software without specific, written
+        # prior permission.
+        #
+        # SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD
+        # TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANT-
+        # ABILITY AND FITNESS.  IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR
+        # BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY
+        # DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+        # WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS
+        # ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
+        # OF THIS SOFTWARE.
+        # --------------------------------------------------------------------
+        
+        load("@stdlib//contextlib", contextlib="contextlib")
+        load("@stdlib//io", io="io")
+        load("@stdlib//re", re="re")
+        load("@stdlib//sys", sys="sys")
+        load("@stdlib//types", types="types")
+        load("@stdlib//warnings", warnings="warnings")
+        load("@stdlib//xml/etree", ElementPath="ElementPath")
+        load("@vendor//option/result", Error="Error")
+        
+        __all__ = [
+            # public symbols
+            "Comment",
+            "dump",
+            "Element",
+            "ElementTree",
+            "fromstring",
+            "fromstringlist",
+            "iselement",
+            "iterparse",
+            "parse",
+            "ParseError",
+            "PI",
+            "ProcessingInstruction",
+            "QName",
+            "SubElement",
+            "tostring",
+            "tostringlist",
+            "TreeBuilder",
+            "VERSION",
+            "XML",
+            "XMLID",
+            "XMLParser",
+            "register_namespace",
+        ]
+        
+        VERSION = "1.3.0"
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)

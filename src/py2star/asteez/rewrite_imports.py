@@ -1,5 +1,7 @@
+import dataclasses
 import logging
 import sys
+import typing
 from collections import defaultdict
 from typing import Dict, Sequence, Set, Union, cast
 
@@ -9,8 +11,8 @@ import libcst.matchers as m
 from importanize import utils as importutils
 
 # from libcst.codemod.visitors import AddImportsVisitor
-from libcst import codemod
-from libcst.codemod import CodemodContext, ContextAwareTransformer
+from libcst import Call, FlattenSentinel, RemovalSentinel, codemod
+from libcst.codemod import CodemodContext
 from libcst.helpers import get_full_name_for_node
 from libcst.metadata import (
     FullyQualifiedNameProvider,
@@ -219,21 +221,19 @@ class RewriteImports(codemod.ContextAwareTransformer):
     def _on_import_from(self, updated_node):
         module_attr = updated_node.module
         relative_imports = len(updated_node.relative)
+        mod_name = ""
         if module_attr:
             mod_name = get_full_name_for_node(module_attr)
-        else:
-            mod_name = "."  # from . import X
-
-        if relative_imports == 0:
-            return mod_name
+            if relative_imports == 0:
+                return mod_name
 
         # we are a relative import!
-        if self.context.full_module_name is None and mod_name == ".":
+        if self.context.full_module_name is None and mod_name:
             print(
-                "relative import",
+                "attempting to rewrite relative import",
                 mod_name,
-                "trans-compilation will need to to be run with -p command",
-                "because root mod name is ambiguous..",
+                "with an unknown module name! trans-compilation will need to "
+                "be run with -p command because root mod name is ambiguous..",
                 file=sys.stderr,
             )
             name_root = ""
@@ -248,12 +248,14 @@ class RewriteImports(codemod.ContextAwareTransformer):
             # ... [[pycrypto_backend, backends, jose][len(dots)]
             # ... from .base import Key => jose.backends.base
             # ... from ..utils import Y => jose.utils.Y
-            name_root = ".".join(reversed(paths[relative_imports:])) + "."
+            name_root = ".".join(reversed(paths[relative_imports:]))
         # if len(updated_node.names) != 1:
         #     print(
         #         "updated_node.names != 1, will just pick first one",
         #         file=sys.stderr,
         #     )
+        if name_root.endswith("."):
+            name_root = name_root[:-1]
         return f"{name_root}{mod_name}"
 
     @staticmethod
@@ -306,3 +308,92 @@ class RewriteImports(codemod.ContextAwareTransformer):
     #     if m.matches(updated_node, m.Call(func=m.Name("load"))):
     #         return self.leave_import_alike(original_node, updated_node)
     #     return updated_node
+
+
+class LarkyImportSorter(codemod.ContextAwareTransformer):
+    METADATA_DEPENDENCIES = (
+        cst.metadata.ScopeProvider,
+        cst.metadata.PositionProvider,
+    )
+
+    def __init__(self, context: CodemodContext) -> None:
+        super().__init__(context)
+        self.names = []
+        self.already_exists = False
+
+    def process_node(
+        self,
+        node: Union[
+            cst.FunctionDef, cst.ClassDef, cst.BaseAssignTargetExpression
+        ],
+        name: str,
+    ) -> None:
+        scope = self.get_metadata(cst.metadata.ScopeProvider, node)
+        if not isinstance(scope, cst.metadata.GlobalScope):
+            return
+        # we are in global scope
+        if not name.startswith("_"):
+            self.names.append(name)
+
+    @m.call_if_inside(m.Call(func=m.Name(value="load")))
+    def visit_Call(self, node: "Call") -> typing.Optional[bool]:
+        self.names.append((node.args[0].value, node))
+        return True
+
+    @m.call_if_inside(m.Expr(value=m.Call(func=m.Name(value="load"))))
+    def leave_Expr(
+        self, original_node: "Expr", updated_node: "Expr"
+    ) -> Union[
+        "BaseSmallStatement",
+        FlattenSentinel["BaseSmallStatement"],
+        RemovalSentinel,
+    ]:
+        # must be top level scope!
+        scope = self.get_metadata(cst.metadata.ScopeProvider, original_node)
+        if not isinstance(scope, cst.metadata.GlobalScope):
+            return updated_node
+        return cst.RemoveFromParent()
+
+    def leave_Module(
+        self, original_node: libcst.Module, updated_node: libcst.Module
+    ) -> libcst.Module:
+        body = []
+        if not updated_node.body:
+            return updated_node
+        i = 0
+        statement = None
+        for _i, _statement in enumerate(updated_node.body):
+            i = _i
+            statement = _statement
+            # keep going until we hit a search
+            if m.matches(
+                statement,
+                m.SimpleStatementLine(body=[m.Expr(value=m.SimpleString())]),
+            ):
+                body.append(statement)
+            else:
+                body.extend(
+                    cst.SimpleStatementLine(body=[cst.Expr(value=y)])
+                    for x, y in self.names[:-1]
+                )
+                break
+
+        # check for leading lines (empty lines or comments) before
+        # the next item in the body and move it above
+        last_item = cst.SimpleStatementLine(
+            body=[cst.Expr(value=self.names[-1][1])]
+        )
+        # copy the leading lines from the next statement
+        # and put it on the last body item
+        if statement.leading_lines:
+            last_item = last_item.with_changes(
+                leading_lines=statement.leading_lines
+            )
+            statement = statement.with_changes(leading_lines=[])
+        body.append(last_item)
+        body.append(statement)
+
+        if i + 1 < len(updated_node.body):
+            body.extend(updated_node.body[i + 1 :])
+
+        return updated_node.with_changes(body=body)

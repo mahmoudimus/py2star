@@ -24,7 +24,7 @@ More transform desugaring ideas here:
 
 - rewrite try/except statements
 - sort imports so that they come *before* anything else in the file 
-- solve the from . import X case
+- [x] solve the from . import X case
 - with statements
 - del 
 - Rewrite lib2to3 fixers to libcst
