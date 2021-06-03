@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import operator
 import sys
 import typing
 from collections import defaultdict
@@ -319,7 +320,6 @@ class LarkyImportSorter(codemod.ContextAwareTransformer):
     def __init__(self, context: CodemodContext) -> None:
         super().__init__(context)
         self.names = []
-        self.already_exists = False
 
     def process_node(
         self,
@@ -374,23 +374,22 @@ class LarkyImportSorter(codemod.ContextAwareTransformer):
             else:
                 body.extend(
                     cst.SimpleStatementLine(body=[cst.Expr(value=y)])
-                    for x, y in self.names[:-1]
+                    # sort imports in lexicographic order
+                    for x, y in sorted(self.names, key=lambda x: x[0].value)
                 )
                 break
 
         # check for leading lines (empty lines or comments) before
         # the next item in the body and move it above
-        last_item = cst.SimpleStatementLine(
-            body=[cst.Expr(value=self.names[-1][1])]
-        )
+        first_item = body[-len(self.names)]
         # copy the leading lines from the next statement
         # and put it on the last body item
         if statement.leading_lines:
-            last_item = last_item.with_changes(
+            first_item = first_item.with_changes(
                 leading_lines=statement.leading_lines
             )
-            statement = statement.with_changes(leading_lines=[])
-        body.append(last_item)
+            statement = statement.with_changes(leading_lines=[cst.EmptyLine()])
+            body[-len(self.names)] = first_item
         body.append(statement)
 
         if i + 1 < len(updated_node.body):

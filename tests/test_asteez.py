@@ -903,3 +903,234 @@ class TestImportSorting(MetadataResolvingCodemodTest):
         """
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
+
+
+class TestDelKeyword(MetadataResolvingCodemodTest):
+
+    TRANSFORM = rewrite_imports.LarkyImportSorter
+
+    def test_import_sorters(self):
+        before = """
+        '''Lightweight XML support for Python.
+        
+         XML is an inherently hierarchical data format, and the most natural way to
+         represent it is with a tree.  This module has two classes for this purpose:
+        
+            1. ElementTree represents the whole XML document as a tree and
+        
+            2. Element represents a single node in this tree.
+        
+         Interactions with the whole document (reading and writing to/from files) are
+         usually done on the ElementTree level.  Interactions with a single XML element
+         and its sub-elements are done on the Element level.
+        
+         Element is a flexible container object designed to store hierarchical data
+         structures in memory. It can be described as a cross between a list and a
+         dictionary.  Each Element has a number of properties associated with it:
+        
+            'tag' - a string containing the element's name.
+        
+            'attributes' - a Python dictionary storing the element's attributes.
+        
+            'text' - a string containing the element's text content.
+        
+            'tail' - an optional string containing text after the element's end tag.
+        
+            And a number of child elements stored in a Python sequence.
+        
+         To create an element instance, use the Element constructor,
+         or the SubElement factory function.
+        
+         You can also use the ElementTree class to wrap an element structure
+         and convert it to and from XML.
+         
+         '''
+        
+        # ---------------------------------------------------------------------
+        # Licensed to PSF under a Contributor Agreement.
+        # See http://www.python.org/psf/license for licensing details.
+        #
+        # ElementTree
+        # Copyright (c) 1999-2008 by Fredrik Lundh.  All rights reserved.
+        #
+        # fredrik@pythonware.com
+        # http://www.pythonware.com
+        # --------------------------------------------------------------------
+        # The ElementTree toolkit is
+        #
+        # Copyright (c) 1999-2008 by Fredrik Lundh
+        #
+        # By obtaining, using, and/or copying this software and/or its
+        # associated documentation, you agree that you have read, understood,
+        # and will comply with the following terms and conditions:
+        #
+        # Permission to use, copy, modify, and distribute this software and
+        # its associated documentation for any purpose and without fee is
+        # hereby granted, provided that the above copyright notice appears in
+        # all copies, and that both that copyright notice and this permission
+        # notice appear in supporting documentation, and that the name of
+        # Secret Labs AB or the author not be used in advertising or publicity
+        # pertaining to distribution of the software without specific, written
+        # prior permission.
+        #
+        # SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD
+        # TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANT-
+        # ABILITY AND FITNESS.  IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR
+        # BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY
+        # DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+        # WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS
+        # ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
+        # OF THIS SOFTWARE.
+        # --------------------------------------------------------------------
+        
+        __all__ = [
+            # public symbols
+            "Comment",
+            "dump",
+            "Element",
+            "ElementTree",
+            "fromstring",
+            "fromstringlist",
+            "iselement",
+            "iterparse",
+            "parse",
+            "ParseError",
+            "PI",
+            "ProcessingInstruction",
+            "QName",
+            "SubElement",
+            "tostring",
+            "tostringlist",
+            "TreeBuilder",
+            "VERSION",
+            "XML",
+            "XMLID",
+            "XMLParser",
+            "register_namespace",
+        ]
+        
+        VERSION = "1.3.0"
+        
+        load("@stdlib//sys", sys="sys")
+        load("@stdlib//re", re="re")
+        load("@stdlib//warnings", warnings="warnings")
+        load("@stdlib//io", io="io")
+        load("@stdlib//contextlib", contextlib="contextlib")
+        
+        load("@stdlib//xml/etree", ElementPath="ElementPath")
+        load("@vendor//option/result", Error="Error")
+        load("@stdlib//types", types="types")
+        """
+
+        after = """
+        '''Lightweight XML support for Python.
+        
+         XML is an inherently hierarchical data format, and the most natural way to
+         represent it is with a tree.  This module has two classes for this purpose:
+        
+            1. ElementTree represents the whole XML document as a tree and
+        
+            2. Element represents a single node in this tree.
+        
+         Interactions with the whole document (reading and writing to/from files) are
+         usually done on the ElementTree level.  Interactions with a single XML element
+         and its sub-elements are done on the Element level.
+        
+         Element is a flexible container object designed to store hierarchical data
+         structures in memory. It can be described as a cross between a list and a
+         dictionary.  Each Element has a number of properties associated with it:
+        
+            'tag' - a string containing the element's name.
+        
+            'attributes' - a Python dictionary storing the element's attributes.
+        
+            'text' - a string containing the element's text content.
+        
+            'tail' - an optional string containing text after the element's end tag.
+        
+            And a number of child elements stored in a Python sequence.
+        
+         To create an element instance, use the Element constructor,
+         or the SubElement factory function.
+        
+         You can also use the ElementTree class to wrap an element structure
+         and convert it to and from XML.
+
+         '''
+        
+        # ---------------------------------------------------------------------
+        # Licensed to PSF under a Contributor Agreement.
+        # See http://www.python.org/psf/license for licensing details.
+        #
+        # ElementTree
+        # Copyright (c) 1999-2008 by Fredrik Lundh.  All rights reserved.
+        #
+        # fredrik@pythonware.com
+        # http://www.pythonware.com
+        # --------------------------------------------------------------------
+        # The ElementTree toolkit is
+        #
+        # Copyright (c) 1999-2008 by Fredrik Lundh
+        #
+        # By obtaining, using, and/or copying this software and/or its
+        # associated documentation, you agree that you have read, understood,
+        # and will comply with the following terms and conditions:
+        #
+        # Permission to use, copy, modify, and distribute this software and
+        # its associated documentation for any purpose and without fee is
+        # hereby granted, provided that the above copyright notice appears in
+        # all copies, and that both that copyright notice and this permission
+        # notice appear in supporting documentation, and that the name of
+        # Secret Labs AB or the author not be used in advertising or publicity
+        # pertaining to distribution of the software without specific, written
+        # prior permission.
+        #
+        # SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD
+        # TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANT-
+        # ABILITY AND FITNESS.  IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR
+        # BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY
+        # DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+        # WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS
+        # ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
+        # OF THIS SOFTWARE.
+        # --------------------------------------------------------------------
+        
+        load("@stdlib//contextlib", contextlib="contextlib")
+        load("@stdlib//io", io="io")
+        load("@stdlib//re", re="re")
+        load("@stdlib//sys", sys="sys")
+        load("@stdlib//types", types="types")
+        load("@stdlib//warnings", warnings="warnings")
+        load("@stdlib//xml/etree", ElementPath="ElementPath")
+        load("@vendor//option/result", Error="Error")
+        
+        __all__ = [
+            # public symbols
+            "Comment",
+            "dump",
+            "Element",
+            "ElementTree",
+            "fromstring",
+            "fromstringlist",
+            "iselement",
+            "iterparse",
+            "parse",
+            "ParseError",
+            "PI",
+            "ProcessingInstruction",
+            "QName",
+            "SubElement",
+            "tostring",
+            "tostringlist",
+            "TreeBuilder",
+            "VERSION",
+            "XML",
+            "XMLID",
+            "XMLParser",
+            "register_namespace",
+        ]
+        
+        VERSION = "1.3.0"
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)

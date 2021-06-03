@@ -23,7 +23,7 @@ More transform desugaring ideas here:
 ### complex translations
 
 - rewrite try/except statements
-- sort imports so that they come *before* anything else in the file 
+- [x] sort imports so that they come *before* anything else in the file 
 - [x] solve the from . import X case
 - with statements
 - del 
