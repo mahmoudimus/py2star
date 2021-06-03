@@ -12,8 +12,15 @@ import libcst.matchers as m
 from importanize import utils as importutils
 
 # from libcst.codemod.visitors import AddImportsVisitor
-from libcst import Call, FlattenSentinel, RemovalSentinel, codemod
+from libcst import (
+    BaseSmallStatement,
+    Call,
+    FlattenSentinel,
+    RemovalSentinel,
+    codemod,
+)
 from libcst.codemod import CodemodContext
+from libcst.codemod.visitors import AddImportsVisitor
 from libcst.helpers import get_full_name_for_node
 from libcst.metadata import (
     FullyQualifiedNameProvider,
@@ -309,6 +316,79 @@ class RewriteImports(codemod.ContextAwareTransformer):
     #     if m.matches(updated_node, m.Call(func=m.Name("load"))):
     #         return self.leave_import_alike(original_node, updated_node)
     #     return updated_node
+
+
+class RemoveDelKeyword(codemod.ContextAwareTransformer):
+    METADATA_DEPENDENCIES = (
+        cst.metadata.ParentNodeProvider,
+        cst.metadata.ScopeProvider,
+        cst.metadata.PositionProvider,
+    )
+
+    def __init__(self, context: CodemodContext) -> None:
+        super().__init__(context)
+        self.names = []
+
+    @m.call_if_inside(m.SimpleStatementLine(body=[m.Del(target=m.DoNotCare())]))
+    def leave_SimpleStatementLine(
+        self,
+        original_node: "SimpleStatementLine",
+        updated_node: "SimpleStatementLine",
+    ) -> Union[
+        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
+    ]:
+        # del self.xxxx
+        _attr = m.Del(
+            target=m.Tuple(
+                elements=[
+                    m.AtLeastN(
+                        n=1,
+                        matcher=m.Element(
+                            value=m.Attribute(value=m.DoNotCare())
+                        ),
+                    )
+                ]
+            )
+        )
+        if updated_node.body and m.matches(updated_node.body[0], _attr):
+            commented = "# del " + "".join(
+                self.module.code_for_node(t)
+                for t in updated_node.body[0].target.elements
+            )
+            un = updated_node.with_changes(
+                body=[cst.Pass()],
+                leading_lines=[
+                    *updated_node.leading_lines,
+                    cst.EmptyLine(comment=cst.Comment(value=commented)),
+                ],
+            )
+            return un
+        # del a[b]
+        _delitem = m.Del(
+            target=m.Subscript(
+                value=m.OneOf(
+                    m.Name(value=m.DoNotCare()),
+                    m.Attribute(value=m.DoNotCare()),
+                )
+            )
+        )
+        if m.matches(updated_node.body[0], _delitem):
+            # operator.delitem(a, b, /)
+            # Same as del a[b].
+            AddImportsVisitor.add_needed_import(self.context, "operator")
+            un = updated_node.deep_replace(
+                updated_node,
+                cst.helpers.parse_template_statement(
+                    # "operator.delitem({value}.{attr}, {slice})",
+                    "operator.delitem({value}, {slice})",
+                    config=self.module.config_for_parsing,
+                    value=updated_node.body[0].target.value,
+                    # attr=updated_node.target.value.attr,
+                    slice=updated_node.body[0].target.slice[0].slice.value,
+                ),
+            )
+            return un
+        return updated_node
 
 
 class LarkyImportSorter(codemod.ContextAwareTransformer):

@@ -1,15 +1,9 @@
-import dataclasses
 import logging
-import os.path
 import unittest
-from pathlib import Path
-from textwrap import dedent
 
 import astunparse
 import libcst as cst
-import pytest
 from libcst.codemod import CodemodContext, CodemodTest
-from libcst.metadata import FullyQualifiedNameProvider
 from py2star.asteez import (
     functionz,
     remove_exceptions,
@@ -398,12 +392,12 @@ class TestRewriteExceptions(MetadataResolvingCodemodTest):
     #     self._names[key] = name
     # return name
 
-    #     rval = safe(self.parser.Parse)("", 1) # end of data
+    # rval = safe(self.parser.Parse)("", 1) # end of data
     # if rval.is_err:
     #     # self._raiseerror(v)
     #     return rval
 
-    #     try:
+    # try:
     #     return _IterParseIterator(source, events, parser, close_source)
     # except:
     #     if close_source:
@@ -907,230 +901,93 @@ class TestImportSorting(MetadataResolvingCodemodTest):
 
 class TestDelKeyword(MetadataResolvingCodemodTest):
 
-    TRANSFORM = rewrite_imports.LarkyImportSorter
+    TRANSFORM = rewrite_imports.RemoveDelKeyword
 
-    def test_import_sorters(self):
+    def test_remove_del_keyword(self):
         before = """
-        '''Lightweight XML support for Python.
+        class Foo:
+            def close(self):
+                '''Finish feeding data to parser and return element structure.
+                '''
+                try:
+                    self.parser.Parse("", 1)  # end of data
+                except self._error as v:
+                    self._raiseerror(v)
+                try:
+                    close_handler = self.target.close
+                except AttributeError:
+                    pass
+                else:
+                    return close_handler()
+                finally:
+                    # get rid of circular references
+                    del self.parser, self._parser
+                    del self.target, self._target
+            def __delitem__(self, index):
+                del self._children[index]                    
+
+        def register_namespace(prefix, uri):
+            '''Register a namespace prefix.
         
-         XML is an inherently hierarchical data format, and the most natural way to
-         represent it is with a tree.  This module has two classes for this purpose:
+            The registry is global, and any existing mapping for either the
+            given prefix or the namespace URI will be removed.
         
-            1. ElementTree represents the whole XML document as a tree and
+            *prefix* is the namespace prefix, *uri* is a namespace uri. Tags and
+            attributes in this namespace will be serialized with prefix if possible.
         
-            2. Element represents a single node in this tree.
+            ValueError is raised if prefix is reserved or is invalid.
         
-         Interactions with the whole document (reading and writing to/from files) are
-         usually done on the ElementTree level.  Interactions with a single XML element
-         and its sub-elements are done on the Element level.
-        
-         Element is a flexible container object designed to store hierarchical data
-         structures in memory. It can be described as a cross between a list and a
-         dictionary.  Each Element has a number of properties associated with it:
-        
-            'tag' - a string containing the element's name.
-        
-            'attributes' - a Python dictionary storing the element's attributes.
-        
-            'text' - a string containing the element's text content.
-        
-            'tail' - an optional string containing text after the element's end tag.
-        
-            And a number of child elements stored in a Python sequence.
-        
-         To create an element instance, use the Element constructor,
-         or the SubElement factory function.
-        
-         You can also use the ElementTree class to wrap an element structure
-         and convert it to and from XML.
-         
-         '''
-        
-        # ---------------------------------------------------------------------
-        # Licensed to PSF under a Contributor Agreement.
-        # See http://www.python.org/psf/license for licensing details.
-        #
-        # ElementTree
-        # Copyright (c) 1999-2008 by Fredrik Lundh.  All rights reserved.
-        #
-        # fredrik@pythonware.com
-        # http://www.pythonware.com
-        # --------------------------------------------------------------------
-        # The ElementTree toolkit is
-        #
-        # Copyright (c) 1999-2008 by Fredrik Lundh
-        #
-        # By obtaining, using, and/or copying this software and/or its
-        # associated documentation, you agree that you have read, understood,
-        # and will comply with the following terms and conditions:
-        #
-        # Permission to use, copy, modify, and distribute this software and
-        # its associated documentation for any purpose and without fee is
-        # hereby granted, provided that the above copyright notice appears in
-        # all copies, and that both that copyright notice and this permission
-        # notice appear in supporting documentation, and that the name of
-        # Secret Labs AB or the author not be used in advertising or publicity
-        # pertaining to distribution of the software without specific, written
-        # prior permission.
-        #
-        # SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD
-        # TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANT-
-        # ABILITY AND FITNESS.  IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR
-        # BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY
-        # DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
-        # WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS
-        # ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
-        # OF THIS SOFTWARE.
-        # --------------------------------------------------------------------
-        
-        __all__ = [
-            # public symbols
-            "Comment",
-            "dump",
-            "Element",
-            "ElementTree",
-            "fromstring",
-            "fromstringlist",
-            "iselement",
-            "iterparse",
-            "parse",
-            "ParseError",
-            "PI",
-            "ProcessingInstruction",
-            "QName",
-            "SubElement",
-            "tostring",
-            "tostringlist",
-            "TreeBuilder",
-            "VERSION",
-            "XML",
-            "XMLID",
-            "XMLParser",
-            "register_namespace",
-        ]
-        
-        VERSION = "1.3.0"
-        
-        load("@stdlib//sys", sys="sys")
-        load("@stdlib//re", re="re")
-        load("@stdlib//warnings", warnings="warnings")
-        load("@stdlib//io", io="io")
-        load("@stdlib//contextlib", contextlib="contextlib")
-        
-        load("@stdlib//xml/etree", ElementPath="ElementPath")
-        load("@vendor//option/result", Error="Error")
-        load("@stdlib//types", types="types")
+            '''
+            if re.match("ns\d+$", prefix):
+                raise ValueError("Prefix format reserved for internal use")
+            for k, v in list(_namespace_map.items()):
+                if k == uri or v == prefix:
+                    del _namespace_map[k]
+            _namespace_map[uri] = prefix
         """
 
         after = """
-        '''Lightweight XML support for Python.
-        
-         XML is an inherently hierarchical data format, and the most natural way to
-         represent it is with a tree.  This module has two classes for this purpose:
-        
-            1. ElementTree represents the whole XML document as a tree and
-        
-            2. Element represents a single node in this tree.
-        
-         Interactions with the whole document (reading and writing to/from files) are
-         usually done on the ElementTree level.  Interactions with a single XML element
-         and its sub-elements are done on the Element level.
-        
-         Element is a flexible container object designed to store hierarchical data
-         structures in memory. It can be described as a cross between a list and a
-         dictionary.  Each Element has a number of properties associated with it:
-        
-            'tag' - a string containing the element's name.
-        
-            'attributes' - a Python dictionary storing the element's attributes.
-        
-            'text' - a string containing the element's text content.
-        
-            'tail' - an optional string containing text after the element's end tag.
-        
-            And a number of child elements stored in a Python sequence.
-        
-         To create an element instance, use the Element constructor,
-         or the SubElement factory function.
-        
-         You can also use the ElementTree class to wrap an element structure
-         and convert it to and from XML.
+        class Foo:
+            def close(self):
+                '''Finish feeding data to parser and return element structure.
+                '''
+                try:
+                    self.parser.Parse("", 1)  # end of data
+                except self._error as v:
+                    self._raiseerror(v)
+                try:
+                    close_handler = self.target.close
+                except AttributeError:
+                    pass
+                else:
+                    return close_handler()
+                finally:
+                    # get rid of circular references
+                    # del self.parser, self._parser
+                    pass
+                    # del self.target, self._target
+                    pass
+            def __delitem__(self, index):
+                operator.delitem(self._children, index)
 
-         '''
+        def register_namespace(prefix, uri):
+            '''Register a namespace prefix.
         
-        # ---------------------------------------------------------------------
-        # Licensed to PSF under a Contributor Agreement.
-        # See http://www.python.org/psf/license for licensing details.
-        #
-        # ElementTree
-        # Copyright (c) 1999-2008 by Fredrik Lundh.  All rights reserved.
-        #
-        # fredrik@pythonware.com
-        # http://www.pythonware.com
-        # --------------------------------------------------------------------
-        # The ElementTree toolkit is
-        #
-        # Copyright (c) 1999-2008 by Fredrik Lundh
-        #
-        # By obtaining, using, and/or copying this software and/or its
-        # associated documentation, you agree that you have read, understood,
-        # and will comply with the following terms and conditions:
-        #
-        # Permission to use, copy, modify, and distribute this software and
-        # its associated documentation for any purpose and without fee is
-        # hereby granted, provided that the above copyright notice appears in
-        # all copies, and that both that copyright notice and this permission
-        # notice appear in supporting documentation, and that the name of
-        # Secret Labs AB or the author not be used in advertising or publicity
-        # pertaining to distribution of the software without specific, written
-        # prior permission.
-        #
-        # SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD
-        # TO THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANT-
-        # ABILITY AND FITNESS.  IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR
-        # BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY
-        # DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
-        # WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS
-        # ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
-        # OF THIS SOFTWARE.
-        # --------------------------------------------------------------------
+            The registry is global, and any existing mapping for either the
+            given prefix or the namespace URI will be removed.
         
-        load("@stdlib//contextlib", contextlib="contextlib")
-        load("@stdlib//io", io="io")
-        load("@stdlib//re", re="re")
-        load("@stdlib//sys", sys="sys")
-        load("@stdlib//types", types="types")
-        load("@stdlib//warnings", warnings="warnings")
-        load("@stdlib//xml/etree", ElementPath="ElementPath")
-        load("@vendor//option/result", Error="Error")
+            *prefix* is the namespace prefix, *uri* is a namespace uri. Tags and
+            attributes in this namespace will be serialized with prefix if possible.
         
-        __all__ = [
-            # public symbols
-            "Comment",
-            "dump",
-            "Element",
-            "ElementTree",
-            "fromstring",
-            "fromstringlist",
-            "iselement",
-            "iterparse",
-            "parse",
-            "ParseError",
-            "PI",
-            "ProcessingInstruction",
-            "QName",
-            "SubElement",
-            "tostring",
-            "tostringlist",
-            "TreeBuilder",
-            "VERSION",
-            "XML",
-            "XMLID",
-            "XMLParser",
-            "register_namespace",
-        ]
+            ValueError is raised if prefix is reserved or is invalid.
         
-        VERSION = "1.3.0"
+            '''
+            if re.match("ns\d+$", prefix):
+                raise ValueError("Prefix format reserved for internal use")
+            for k, v in list(_namespace_map.items()):
+                if k == uri or v == prefix:
+                    operator.delitem(_namespace_map, k)
+            _namespace_map[uri] = prefix
         """
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)

@@ -23,10 +23,11 @@ More transform desugaring ideas here:
 ### complex translations
 
 - rewrite try/except statements
+- with statements
 - [x] sort imports so that they come *before* anything else in the file 
 - [x] solve the from . import X case
-- with statements
-- del 
+- [x] del 
+  
 - Rewrite lib2to3 fixers to libcst
  - Particularly the test generation stuff should be easy to port tests
 
