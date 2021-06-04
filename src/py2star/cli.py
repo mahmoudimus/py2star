@@ -172,6 +172,7 @@ def larkify(filename, args):
         remove_exceptions.UnpackTargetAssignments(context),
         remove_exceptions.DesugarBuiltinOperators(context),
         remove_exceptions.DesugarSetSyntax(context),
+        rewrite_imports.RemoveDelKeyword(context),
         rewrite_loopz.WhileToForLoop(context),
         functionz.RewriteTypeChecks(context),
         functionz.GeneratorToFunction(context),
@@ -204,6 +205,7 @@ def larkify(filename, args):
         AddImportsVisitor(context),
         RemoveImportsVisitor(context),
         rewrite_imports.RewriteImports(context),
+        rewrite_imports.LarkyImportSorter(context),
     ]
 
     wrapper = libcst.MetadataWrapper(program)
