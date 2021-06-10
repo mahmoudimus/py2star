@@ -1,3 +1,4 @@
+import io
 import logging
 import unittest
 
@@ -18,10 +19,20 @@ from py2star.asteez import (
 logger = logging.getLogger(__name__)
 
 
+# Fix for https://github.com/simonpercivall/astunparse/issues/43
+class FixedAstunparseUnparser(astunparse.Unparser):
+    def _Constant(self, t):
+        if not hasattr(t, "kind"):
+            setattr(t, "kind", None)
+        super()._Constant(t)
+
+
 def test_remove_fstring(program):
     rewriter = rewrite_fstring.RemoveFStrings()
     rewritten = rewriter.visit(program)
-    code = astunparse.unparse(rewritten)
+    code = io.StringIO()
+    FixedAstunparseUnparser(rewritten, file=code)
+    code = code.getvalue()
     assert "raise ValueError(('%s, %s, %s' % (key, mode, nonce)))" in code
     assert "return ('%s' % (foo,))" in code
 
@@ -169,6 +180,21 @@ class TestUnpackTargetAssignments(CodemodTest):
         after = """
         a = "xyz"
         b = a
+        """
+        self.assertCodemod(before, after)
+
+    def test_unpack_nested_target(self):
+        before = """
+        class Kite(object):
+            def x(self, y):
+                self.z = self.w = p = y
+        """
+        after = """
+        class Kite(object):
+            def x(self, y):
+                self.z = y
+                self.w = self.z
+                p = self.z
         """
         self.assertCodemod(before, after)
 
@@ -325,84 +351,6 @@ class TestRewriteExceptions(MetadataResolvingCodemodTest):
             before, after, context_override=CodemodContext(wrapper=mod)
         )
 
-    #
-    # class Element:
-    #     """An XML element.
-    #
-    #     This class is the reference implementation of the Element interface.
-    #
-    #     An element's length is its number of subelements.  That means if you
-    #     want to check if an element is truly empty, you should check BOTH
-    #     its length AND its text attribute.
-    #
-    #     The element tag, attribute names, and attribute values can be either
-    #     bytes or strings.
-    #
-    #     *tag* is the element name.  *attrib* is an optional dictionary containing
-    #     element attributes. *extra* are additional element attributes given as
-    #     keyword arguments.
-    #
-    #     Example form:
-    #         <tag attrib>text<child/>...</tag>tail
-    #
-    #     """
-    #
-    #     tag = None
-    #     """The element's name."""
-    #
-    #     attrib = None
-    #     """Dictionary of the element's attributes."""
-    #
-    #     text = None
-    #     """
-    #     Text before first subelement. This is either a string or the value None.
-    #     Note that if there is no text, this attribute may be either
-    #     None or the empty string, depending on the parser.
-    #
-    #     """
-    #
-    #     tail = None
-    #     """
-    #     Text after this element's end tag, but before the next sibling element's
-    #     start tag.  This is either a string or the value None.  Note that if there
-    #     was no text, this attribute may be either None or an empty string,
-    #     depending on the parser.
-    #
-    #     """
-    #
-    #     def __init__(self, tag, attrib={}, **extra):
-    #         if not isinstance(attrib, dict):
-    #             raise TypeError(
-    #                 "attrib must be dict, not %s" % (attrib.__class__.__name__,)
-    #             )
-    #         attrib = attrib.copy()
-    #         attrib.update(extra)
-    #         self.tag = tag
-    #         self.attrib = attrib
-    #         self._children = []
-
-    # def _fixname(self, key):
-    # # expand qname, and convert name string to ascii, if possible
-    # try:
-    #     name = self._names[key]
-    # except KeyError:
-    #     name = key
-    #     if "}" in name:
-    #         name = "{" + name
-    #     self._names[key] = name
-    # return name
-
-    # rval = safe(self.parser.Parse)("", 1) # end of data
-    # if rval.is_err:
-    #     # self._raiseerror(v)
-    #     return rval
-
-    # try:
-    #     return _IterParseIterator(source, events, parser, close_source)
-    # except:
-    #     if close_source:
-    #         source.close()
-    #     raise
     def test_map_raise_statement_with_func(self):
         before = """
         class Foo(object):
@@ -515,72 +463,124 @@ def foo(a, b, c):
     assert _remove_empty_lines(rewritten.code) == _remove_empty_lines(expected)
 
 
-def test_class_to_function():
-    tree = cst.parse_module(
+class TestClassRewriting(MetadataResolvingCodemodTest):
+    TRANSFORM = rewrite_class.ClassToFunctionRewriter
+
+    def test_delete_kwarg_in_constructors(self):
+        before = """
+        class Element:
+            def __init__(self, tag, attrib={}, **extra):
+                if not isinstance(attrib, dict):
+                    raise TypeError(
+                        "attrib must be dict, not %s" % (attrib.__class__.__name__,)
+                    )
+                attrib = attrib.copy()
+                attrib.update(extra)
+                self.tag = tag
+                self.attrib = attrib
+                self._children = []
         """
-class Foo(object):
-    def __init__(self):
-        pass
+        after = """
+        def Element(tag, attrib={}, **extra):
+            self = larky.mutablestruct(__class__='Element')
+            def __init__(tag, attrib, extra):
+                if not isinstance(attrib, dict):
+                    raise TypeError(
+                        "attrib must be dict, not %s" % (attrib.__class__.__name__,)
+                    )
+                attrib = attrib.copy()
+                attrib.update(extra)
+                self.tag = tag
+                self.attrib = attrib
+                self._children = []
+                return self
+            self = __init__(tag, attrib, extra)
+            return self
+        """
+        self.assertCodemod(before, after)
 
-class Bar(object):
-    def __init__(self, var, value):
-        pass
+    def test_delete_stararg_in_constructors(self):
+        before = """
+        class XMLPullParser:
+            def __init__(self, events=None, *, _parser=None):
+                self._events_queue = []
+                self._index = 0
+                self._parser = _parser or XMLParser(target=TreeBuilder())
+                # wire up the parser for event reporting
+                if events is None:
+                    events = ("end",)
+                self._parser._setevents(self._events_queue, events)
+        """
+        after = """
+        def XMLPullParser(events=None, _parser=None):
+            self = larky.mutablestruct(__class__='XMLPullParser')
+            def __init__(events, _parser):
+                self._events_queue = []
+                self._index = 0
+                self._parser = _parser or XMLParser(target=TreeBuilder())
+                # wire up the parser for event reporting
+                if events is None:
+                    events = ("end",)
+                self._parser._setevents(self._events_queue, events)
+                return self
+            self = __init__(events, _parser)
+            return self
+        """
+        self.assertCodemod(before, after)
 
-class Complicated():
-    def __init__(self, x, y, z=1):
-        pass
-
-    def foo(self, one, two=2):
-        pass
-
-    @staticmethod
-    def doit(a, b):
-        pass
-"""
-    )
-    context = CodemodContext()
-    c2frw = rewrite_class.ClassToFunctionRewriter(
-        context, remove_decorators=True
-    )
-    rewritten = tree.visit(c2frw)
-    expected = """
-def Foo():
-    self = larky.mutablestruct(__class__='Foo')
-    def __init__():
-        pass
-        return self
-    self = __init__()
-
-    return self
-
-def Bar(var, value):
-    self = larky.mutablestruct(__class__='Bar')
-    def __init__(var, value):
-        pass
-        return self
-    self = __init__(var, value)
-
-    return self
-
-def Complicated(x, y, z=1):
-    self = larky.mutablestruct(__class__='Complicated')
-    def __init__(x, y, z):
-        pass
-        return self
-    self = __init__(x, y, z)
-
-    def foo(one, two=2):
-        pass
-    self.foo = foo
-    
-    def doit(a, b):
-        pass
-    self.doit = doit
-
-    return self
-"""
-    # using split() avoids having to trim trailing whitespace.
-    assert _remove_empty_lines(rewritten.code) == _remove_empty_lines(expected)
+    def test_class_to_function(self):
+        before = """
+        class Foo(object):
+            def __init__(self):
+                pass
+        
+        class Bar(object):
+            def __init__(self, var, value):
+                pass
+        
+        class Complicated():
+            def __init__(self, x, y, z=1):
+                pass
+        
+            def foo(self, one, two=2):
+                pass
+        
+            @staticmethod
+            def doit(a, b):
+                pass
+        """
+        after = """
+        def Foo():
+            self = larky.mutablestruct(__class__='Foo')
+            def __init__():
+                pass
+                return self
+            self = __init__()
+            return self
+        def Bar(var, value):
+            self = larky.mutablestruct(__class__='Bar')
+            def __init__(var, value):
+                pass
+                return self
+            self = __init__(var, value)
+            return self
+        def Complicated(x, y, z=1):
+            self = larky.mutablestruct(__class__='Complicated')
+            def __init__(x, y, z):
+                pass
+                return self
+            self = __init__(x, y, z)
+        
+            def foo(one, two=2):
+                pass
+            self.foo = foo
+            
+            def doit(a, b):
+                pass
+            self.doit = doit
+            return self
+            """
+        self.assertCodemod(before, after, remove_decorators=True)
 
 
 def _remove_empty_lines(mystr):

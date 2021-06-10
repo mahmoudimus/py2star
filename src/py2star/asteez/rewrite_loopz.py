@@ -3,6 +3,7 @@ import typing
 
 import libcst as ast
 from libcst import codemod
+from libcst.codemod.visitors import AddImportsVisitor
 
 
 def invert(node):
@@ -76,5 +77,10 @@ class WhileToForLoop(codemod.ContextAwareTransformer):
                 header=block.header,
             ),
             orelse=None,
+        )
+        AddImportsVisitor.add_needed_import(
+            self.context,
+            "larky",
+            "larky",
         )
         return updated_node.deep_replace(updated_node, as_for)

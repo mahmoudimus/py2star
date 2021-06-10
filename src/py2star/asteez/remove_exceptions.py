@@ -100,7 +100,7 @@ class UnpackTargetAssignments(codemod.ContextAwareTransformer):
             body=[
                 m.Assign(
                     targets=[m.AtLeastN(n=2, matcher=m.AssignTarget())],
-                    value=m.SimpleString(),
+                    value=m.OneOf(m.SimpleString(), m.Name()),
                 )
             ]
         )
@@ -136,7 +136,7 @@ class UnpackTargetAssignments(codemod.ContextAwareTransformer):
                             targets=[
                                 cst.AssignTarget(target=t.target),
                             ],
-                            value=assign_stmt.targets[idx].target,
+                            value=assign_stmt.targets[0].target,
                         ),
                     ]
                 )
@@ -147,7 +147,6 @@ class UnpackTargetAssignments(codemod.ContextAwareTransformer):
 class DesugarBuiltinOperators(codemod.ContextAwareTransformer):
     """
     - ** to pow
-    - X @ Y = operator.matmul(x,y)..
     """
 
     @m.call_if_inside(m.BinaryOperation(operator=m.Power()))

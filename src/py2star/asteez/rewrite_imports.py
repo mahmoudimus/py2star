@@ -186,6 +186,8 @@ class RewriteImports(codemod.ContextAwareTransformer):
 
         # /Users/mahmoud/src/unsorted/gelgel/python-jose/jose-larky/jwe.star
         # jose/backends/rsa_backend.py
+        # https://github.com/MarcoGorelli/absolufy-imports
+        # https://github.com/asottile/pyupgrade
         mod_name = None
         if type(updated_node) == cst.ImportFrom:
             mod_name = self._on_import_from(updated_node)
@@ -262,8 +264,14 @@ class RewriteImports(codemod.ContextAwareTransformer):
         #         "updated_node.names != 1, will just pick first one",
         #         file=sys.stderr,
         #     )
-        if name_root.endswith("."):
-            name_root = name_root[:-1]
+        if mod_name:
+            if name_root.endswith(".") and mod_name.startswith("."):
+                name_root = name_root[:-1]
+            elif not name_root.endswith(".") and not mod_name.startswith("."):
+                name_root = name_root + "."
+        else:
+            if name_root.endswith("."):
+                name_root = name_root[:-1]
         return f"{name_root}{mod_name}"
 
     @staticmethod

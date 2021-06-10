@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import typing
 
 import libcst as cst
@@ -88,16 +89,14 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             params = updated_node.params
             before, self_func_assign = self._assign_func_to_self(updated_node)
 
-        results = [before] if before else []
-        results.append(
-            updated_node.with_changes(
-                name=self._namespace_function_name(updated_node),
-                params=params,
-                decorators=decorators,
-            )
+        results: typing.List[typing.Any] = [before] if before else []
+        n = updated_node.with_changes(
+            name=self._namespace_function_name(updated_node),
+            params=params,
+            decorators=decorators,
         )
+        results.append(n)
         if self.class_name:
-            # results.append(cst.SimpleStatementLine(body=[self_func_assign]))
             results.append(self_func_assign)
 
         return cst.FlattenSentinel(results)
@@ -153,7 +152,14 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
     def _emulate_class_construction(updated_node: cst.FunctionDef, class_name):
         func_name = updated_node.name.value
         args = []
-        for p in updated_node.params.params:
+        for p in itertools.chain(
+            updated_node.params.params,
+            updated_node.params.posonly_params,
+            updated_node.params.kwonly_params,
+            (updated_node.params.star_kwarg,),
+        ):
+            if not p:
+                continue
             args.append(cst.Arg(value=p.name))
         # self = larky.mutablestruct(__class__='xxxx')
         before = cst.SimpleStatementLine(
@@ -195,9 +201,10 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         )
         # def __init__():
         #     return self  <-- insert this.
-        body: cst.IndentedBlock = updated_node.body.with_changes(
+        body: cst.BaseSuite = updated_node.body
+        body = body.with_changes(
             body=[
-                updated_node.body.body[0],
+                *updated_node.body.body,
                 cst.SimpleStatementLine(
                     body=[cst.Return(value=cst.Name(value="self"))]
                 ),
@@ -258,7 +265,14 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         #     if self.init_params
         #     else cst.Parameters()
         # )
-        params = self.init_params if self.init_params else cst.Parameters()
+        params = cst.Parameters()
+        if self.init_params:
+            params = self.init_params
+            # TODO (mahmoudimus): I have to fix this for the failing test
+            # params = params.with_changes(star_arg=None)
+        # params = params.deep_replace(
+        #     params, params.with_changes(star_arg=cst.MaybeSentinel.DEFAULT)
+        # )
         body = self.append_return_self_to_body(updated_node)
         self.class_name = None
         return updated_node.deep_replace(
@@ -294,10 +308,22 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
     @staticmethod
     def _remove_default_values(params: cst.Parameters):
         updated = []
-        for p in params.params:
+        for p in itertools.chain(
+            params.params,
+            params.posonly_params,
+            params.kwonly_params,
+            (params.star_kwarg,),
+        ):
+            if not p:
+                continue
             # if there's a default value for a parameter, remove it.
             if p.default is not None and p.equal != cst.MaybeSentinel:
-                p = p.with_changes(default=None, equal=cst.MaybeSentinel)
+                p = p.with_deep_changes(
+                    p, default=None, equal=cst.MaybeSentinel
+                )
+            # __init__(x, y, **z)
+            if p.star is not None:
+                p = p.with_deep_changes(p, star=None)
             updated.append(p)
         return cst.Parameters(updated)
 

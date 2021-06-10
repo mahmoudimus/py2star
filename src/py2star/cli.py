@@ -2,26 +2,17 @@ import argparse
 import ast
 import io
 import logging
-import os
 import re
 import sys
 import tokenize
-from functools import partial
 from lib2to3 import refactor
-from pathlib import Path
 from typing import Optional, Pattern
 
+import lib3to6 as three2six
 import libcst
+from lib3to6 import common as three2six_common
 from libcst.codemod import CodemodContext
 from libcst.codemod.visitors import AddImportsVisitor, RemoveImportsVisitor
-from libcst.metadata import (
-    FullRepoManager,
-    FullyQualifiedNameProvider,
-    ParentNodeProvider,
-    QualifiedNameProvider,
-    TypeInferenceProvider,
-)
-
 from py2star.asteez import (
     functionz,
     remove_exceptions,
@@ -108,6 +99,27 @@ def _add_common(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return p
 
 
+def detect_encoding(filename):
+    with open(filename, "rb") as f:
+        try:
+            encoding, _ = tokenize.detect_encoding(f.readline)
+        except SyntaxError as se:
+            logger.exception("%s: SyntaxError: %s", filename, se)
+            return
+    return encoding
+
+
+def fixup_indentation(fileobj):
+    # return f.read()
+    r = ReIndenter(fileobj)
+    r.run()  # ensure spaces vs tabs
+
+    with io.StringIO() as o:
+        o.writelines(r.after)
+        o.flush()
+        return o.getvalue()
+
+
 def onfixes(filename, fixers, doprint=True):
     if not fixers:
         _fixers = refactor.get_fixers_from_package("py2star.fixes")
@@ -119,28 +131,15 @@ def onfixes(filename, fixers, doprint=True):
             if i.endswith(x)
         ]
 
-    # with open(filename, "r") as f:
-    #     out = f.read()
-    with open(filename, "rb") as f:
-        try:
-            encoding, _ = tokenize.detect_encoding(f.readline)
-        except SyntaxError as se:
-            logger.exception("%s: SyntaxError: %s", filename, se)
-            return
+    encoding = detect_encoding(filename)
     try:
         with open(filename, encoding=encoding) as f:
-            # return f.read()
-            r = ReIndenter(f)
+            out = fixup_indentation(f)
     except IOError as msg:
         logger.exception("%s: I/O Error: %s", filename, msg)
         return
 
-    r.run()  # ensure spaces vs tabs
-
-    with io.StringIO() as o:
-        o.writelines(r.after)
-        o.flush()
-        out = o.getvalue()
+    # out = _lib3to6(filename, out)
 
     for f in _fixers:
         logger.debug("running fixer: %s", f)
@@ -152,6 +151,29 @@ def onfixes(filename, fixers, doprint=True):
     if doprint:
         print(out)
     return out
+
+
+def _lib3to6(filename, source_text, install_requires=None, mode="enabled"):
+    cfg = three2six.packaging.eval_build_config(
+        target_version="3.5",
+        install_requires=install_requires,
+        default_mode=mode,
+    )
+
+    ctx = three2six_common.BuildContext(cfg, filename)
+    try:
+        fixed_source_text = three2six.transpile.transpile_module(
+            ctx, source_text
+        )
+    except three2six_common.CheckError as err:
+        loc = filename
+        if err.lineno >= 0:
+            loc += "@" + str(err.lineno)
+
+        err.args = (loc + " - " + err.args[0],) + err.args[1:]
+        raise
+
+    return fixed_source_text
 
 
 def larkify(filename, args):

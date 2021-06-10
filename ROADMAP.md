@@ -17,20 +17,17 @@
 
 ### complex translations
 
+- [x] sort imports so that they come *before* anything else in the file 
+- [x] solve the from . import X case
+- [x] del
+- [x] rewrite:
+    - [x] a = b = "xyz" to:
+        - a = "xyz"
+        - b = a  
 - [ ] rewrite try/except statements
 - [ ] with statements
 - [ ] `yield from` => `return`  
-- [x] sort imports so that they come *before* anything else in the file 
-- [x] solve the from . import X case
-- [x] del 
-- [ ]
-```python
-def QName():
-  def __le__(other):
-      if types.is_instance(other, QName): # ? 
-          return self.text <= other.text  # operator.lte(...)
-      return self.text <= other  # operator.lte( .. )
-```  
+
 - [ ] Fix the bug with init..there's definitely *some* bug 
 ```python
 class QName:
@@ -53,14 +50,21 @@ def QName(text_or_uri, tag=None):
     self = __init__(text_or_uri, tag)
 ```
 
+- [ ] 
+```python
+def do(namespace): 
+    if not namespaces:
+        raise KeyError  # gets translated to return KeyError! WRONG!
+```
+
+- [ ] for non-tests, rewrite `assert self._last.tail == None, "internal error (tail)"` to
+      the inverse `if not (self._last.tail == None): ...`
+
 - [ ] `type(text).__name__` or `type(text).__class__.__name__` needs to be changed to `type(text)`
 - [ ] for/else (replace)
 - [ ] `_WHILE_LOOP_EMULATION_ITERATION`
+- [ ] `events[:index] = []` == `for i in range(index): events.pop(0)` 
 
-- [x] rewrite:
-    - [x] a = b = "xyz" to:
-        - a = "xyz"
-        - b = a
     
 - [] decode()/encode() should be translated to codecs.encode()/codecs.decode()
 - [] `self.__class__` => `__init__()` or `function()...`
@@ -107,6 +111,13 @@ def foo(target):
     finally:
         del target
 ```
+
+- [ ] implicit string concatanation..
+
+## bug fixes
+
+- [ ] `__class__` vs `__name__` (oops!, i misunderstood semantics..)
+
 ### exceptions
 
 - [x] Exceptions => fail(), fix up the strings
@@ -118,8 +129,6 @@ def foo(target):
 ### operators
 
 - [x] ** to pow
-- [ ] X @ Y = operator.matmul(x,y)..
-
 
 ### bytes:
   
@@ -140,7 +149,13 @@ def foo(target):
 
 ## TODO
 
-- integrate lib3to6 / pybackwards / python-future?
+- integrate lib3to6 / python-future?
+  - pybackwards has issues (astunparse)
+  - [ ] 
+```python
+attr_value = elem.get(key)
+if attr_value != None and attr_value != value:
+```
 - the cli should really be something similar to [instagram/fixit](https://github.com/instagram/fixit)
 
 More transform desugaring ideas here:
