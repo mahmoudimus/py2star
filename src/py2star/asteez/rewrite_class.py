@@ -57,10 +57,10 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         # (IMPORTANT! Run self stripper FIRST to set functions w/o self so
         #  rewriting can use selfless parameters when manually setting
         #  functions).
-        stripper = FunctionParameterStripper(CodemodContext(), ["self"])
+        stripper = FunctionParameterStripper(self.context, ["self"])
         updated_node = updated_node.visit(stripper)
+        updated_node = updated_node.visit(UndecorateClassMethods(self.context))
 
-        decorators = self.undecorate_function(updated_node)
         # If there's an init, take its params to convert it
         # from:
         #
@@ -74,7 +74,6 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         #     def __init__(foo, value):
         #         pass
         #
-        before = None
         if updated_node.name.value == "__init__":
             # init is a special case
             # TODO: __new__ and metaclasses? not supported for now.
@@ -85,31 +84,28 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                 updated_node,
                 self_func_assign,
             ) = self._emulate_class_construction(updated_node, self.class_name)
+            prefixer = PrefixMethodByClsName(
+                self.context, self.class_name, excluded_methods=("__init__",)
+            )
+            updated_node = updated_node.visit(prefixer)
         else:
             params = updated_node.params
             before, self_func_assign = self._assign_func_to_self(updated_node)
+            if self.namespace_defs:
+                prefixer = PrefixMethodByClsName(self.context, self.class_name)
+                updated_node = updated_node.visit(prefixer)
 
         results: typing.List[typing.Any] = [before] if before else []
+
         n = updated_node.with_changes(
-            name=self._namespace_function_name(updated_node),
+            # name=self._namespace_function_name(updated_node),
             params=params,
-            decorators=decorators,
         )
         results.append(n)
         if self.class_name:
             results.append(self_func_assign)
 
         return cst.FlattenSentinel(results)
-
-    def undecorate_function(self, updated_node):
-        if not self.remove_decorators:
-            return updated_node.decorators
-
-        decorators = []
-        for dec in updated_node.decorators:
-            if dec.decorator.value in ["staticmethod", "classmethod"]:
-                continue
-        return decorators
 
     @staticmethod
     def _assign_func_to_self(updated_node: cst.FunctionDef):
@@ -230,26 +226,26 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             cst.SimpleStatementLine(body=[self_func_assign]),
         )
 
-    def _namespace_function_name(self, node):
-        """
-        Rewrite function name to be namespaced with the classname, if
-        namespace_defs flag is turned on.
-
-            class Foo(object):
-               def __init__(self):
-                   pass
-
-        becomes:
-
-            class Foo(object):
-               def Foo__init__(self):
-                   pass
-        :param node:
-        :return:
-        """
-        if self.namespace_defs:
-            return cst.Name(f"{self.class_name}_{node.name.value}")
-        return node.name
+    # def _namespace_function_name(self, node):
+    #     """
+    #     Rewrite function name to be namespaced with the classname, if
+    #     namespace_defs flag is turned on.
+    #
+    #         class Foo(object):
+    #            def __init__(self):
+    #                pass
+    #
+    #     becomes:
+    #
+    #         class Foo(object):
+    #            def Foo__init__(self):
+    #                pass
+    #     :param node:
+    #     :return:
+    #     """
+    #     if self.namespace_defs:
+    #         return cst.Name(f"{self.class_name}_{node.name.value}")
+    #     return node.name
 
     def leave_ClassDef(
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
@@ -328,6 +324,75 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         return cst.Parameters(updated)
 
 
+class PrefixMethodByClsName(codemod.ContextAwareTransformer):
+    """
+    Rewrite function name to be namespaced with the classname, if
+    namespace_defs flag is turned on.
+
+        class Foo(object):
+           def __init__(self):
+               pass
+
+    becomes:
+
+        class Foo(object):
+           def Foo__init__(self):
+               pass
+    """
+
+    def __init__(self, context, class_name, excluded_methods=None) -> None:
+        super(PrefixMethodByClsName, self).__init__(context)
+        self.class_name = class_name
+        self.excluded = excluded_methods if excluded_methods else ()
+
+    def leave_FunctionDef(
+        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
+    ) -> typing.Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel[cst.BaseStatement],
+        cst.RemovalSentinel,
+    ]:
+        if updated_node.name.value in self.excluded:
+            return updated_node
+        if not self.class_name:
+            return updated_node
+        return updated_node.with_changes(
+            name=cst.Name(f"{self.class_name}_{updated_node.name.value}"),
+        )
+
+
+class UndecorateClassMethods(codemod.ContextAwareTransformer):
+    def __init__(self, context, exclude_decorators=None, noop=False) -> None:
+        super(UndecorateClassMethods, self).__init__(context)
+        self.excluded = (
+            exclude_decorators
+            if exclude_decorators
+            else ["staticmethod", "classmethod"]
+        )
+        self.noop = noop
+
+    def leave_FunctionDef(
+        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
+    ) -> typing.Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel[cst.BaseStatement],
+        cst.RemovalSentinel,
+    ]:
+        return updated_node.with_changes(
+            decorators=self.undecorate_function(updated_node)
+        )
+
+    def undecorate_function(self, updated_node):
+        if self.noop:
+            return updated_node.decorators
+
+        decorators = []
+        for dec in updated_node.decorators:
+            if dec.decorator.value in self.excluded:
+                continue
+        return decorators
+
+
 class FunctionParameterStripper(codemod.ContextAwareTransformer):
     DESCRIPTION = "Strips configured params from function signatures"
 
@@ -383,3 +448,90 @@ class AttributeGetter(codemod.ContextAwareTransformer):
                 dot=cst.SimpleWhitespace(value=""),
             )
         return updated_node
+
+
+class DedentModule(codemod.ContextAwareTransformer):
+    def leave_Module(
+        self, original_node: "cst.Module", updated_node: "cst.Module"
+    ) -> "cst.Module":
+
+        module_body = []
+        for classdef in updated_node.body:
+            indentedbody = typing.cast(cst.IndentedBlock, classdef.body)
+            module_body.extend([*indentedbody.body])
+            # module_body.append(deindented_body)
+
+        return updated_node.with_changes(body=module_body)
+
+
+class AssertStatements(codemod.ContextAwareTransformer):
+    # "assertDictEqual": partial(CompOp, "is_equal_to"),
+    # "assertListEqual": partial(CompOp, "is_equal_to"),
+    # "assertMultiLineEqual": partial(CompOp, "is_equal_to"),
+    # "assertSetEqual": partial(CompOp, "is_equal_to"),
+    # "assertTupleEqual": partial(CompOp, "is_equal_to"),
+    # "assertSequenceEqual": partial(CompOp, "is_equal_to"),
+    # "assertEqual": partial(CompOp, "is_equal_to"),
+    # "assertNotEqual": partial(CompOp, "is_not_equal_to"),
+    # "assertIs": partial(CompOp, "is_equal_to"),
+    # "assertGreater": partial(CompOp, "is_greater_than"),
+    # "assertLessEqual": partial(CompOp, "is_lte_to"),
+    # "assertLess": partial(CompOp, "is_less_than"),
+    # "assertGreaterEqual": partial(CompOp, "is_gte_to"),
+    # "assertIn": partial(CompOp, "is_in"),
+    # "assertIsNot": partial(CompOp, "is_not_equal_to"),
+    # "assertNotIn": partial(CompOp, "is_not_in"),
+    # "assertIsInstance": partial(CompOp, "is_instance_of"),
+    # "assertNotIsInstance": partial(CompOp, "is_not_instance_of"),
+    # unary operations
+    # "assertIsNone": partial(UnaryOp, "assert_that", "is_none"),
+    # "assertIsNotNone": partial(UnaryOp, "assert_that", "is_not_none"),
+    # "assertFalse": partial(UnaryOp, "assert_that", "is_false"),
+    # "failIf": partial(UnaryOp, "assert_that", "is_false"),
+    # "assertTrue": partial(UnaryOp, "assert_that", "is_true"),
+    # "failUnless": partial(UnaryOp, "assert_that", "is_true"),
+    # "assert_": partial(UnaryOp, "assert_that", "is_true"),
+    pass
+
+
+class RewriteTestCases(codemod.ContextAwareTransformer):
+    def __init__(self, context: CodemodContext, class_name=None):
+        super(RewriteTestCases, self).__init__(context)
+        self.class_name = class_name
+
+    def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
+        self.class_name = node.name.value
+        return True
+
+    # def leave_ClassDef(
+    #     self, original_node: "cst.ClassDef", updated_node: "cst.ClassDef"
+    # ) -> typing.Union[
+    #     "cst.BaseStatement",
+    #     cst.FlattenSentinel["cst.BaseStatement"],
+    #     cst.RemovalSentinel,
+    # ]:
+    #     rewriter = ClassToFunctionRewriter(
+    #         self.context, namespace_defs=True, remove_decorators=True
+    #     )
+    #     return updated_node.visit(rewriter)
+
+    def leave_FunctionDef(
+        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
+    ) -> typing.Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel[cst.BaseStatement],
+        cst.RemovalSentinel,
+    ]:
+        un = updated_node.visit(
+            FunctionParameterStripper(self.context, ["self"])
+        )
+        un = un.visit(UndecorateClassMethods(self.context))
+        un = un.visit(PrefixMethodByClsName(self.context, self.class_name))
+        return un
+
+    def leave_Module(
+        self, original_node: "cst.Module", updated_node: "cst.Module"
+    ) -> "cst.Module":
+        print("Got here!")
+        dedenter = DedentModule(self.context)
+        updated_node.visit(dedenter)

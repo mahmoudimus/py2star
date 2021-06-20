@@ -34,6 +34,18 @@ class DesugarDecorators(codemod.ContextAwareTransformer):
 
     """
 
+    EXCLUDED = (
+        "staticmethod",
+        "classmethod",
+    )
+
+    def __init__(self, context, exclude_decorators=None, noop=False) -> None:
+        super(DesugarDecorators, self).__init__(context)
+        self.excluded = (
+            exclude_decorators if exclude_decorators else self.EXCLUDED
+        )
+        self.noop = noop
+
     @m.call_if_inside(m.ClassDef(decorators=[m.AtLeastN(n=1)]))
     def leave_ClassDef(
         self, original_node: "ClassDef", updated_node: "ClassDef"
@@ -61,7 +73,7 @@ class DesugarDecorators(codemod.ContextAwareTransformer):
             if not m.matches(d.decorator, m.TypeOf(m.Call)):
                 # skip if it is not staticmethod or classmethod since these are
                 # meaningless in starlark
-                if d.decorator.value in ("staticmethod", "classmethod"):
+                if d.decorator.value in self.excluded:
                     continue
             fn = cst.Call(d.decorator, args=[cst.Arg(fn)])
         result = cst.Assign(

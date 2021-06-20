@@ -472,7 +472,10 @@ class LarkyImportSorter(codemod.ContextAwareTransformer):
         first_item = body[-len(self.names)]
         # copy the leading lines from the next statement
         # and put it on the last body item
-        if statement.leading_lines:
+        if (
+            m.matches(statement, m.SimpleStatementLine())
+            and statement.leading_lines
+        ):
             first_item = first_item.with_changes(
                 leading_lines=statement.leading_lines
             )

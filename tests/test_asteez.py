@@ -4,6 +4,7 @@ import unittest
 
 import astunparse
 import libcst as cst
+import pytest
 from libcst.codemod import CodemodContext, CodemodTest
 from py2star.asteez import (
     functionz,
@@ -17,6 +18,15 @@ from py2star.asteez import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class MetadataResolvingCodemodTest(CodemodTest):
+    def _get_context_override(self, before):
+        mod = cst.MetadataWrapper(
+            cst.parse_module(self.make_fixture_data(before))
+        )
+        mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
+        return CodemodContext(wrapper=mod)
 
 
 # Fix for https://github.com/simonpercivall/astunparse/issues/43
@@ -161,15 +171,6 @@ b != False
     assert expected.strip() == rewritten.code.strip()
 
 
-class MetadataResolvingCodemodTest(CodemodTest):
-    def _get_context_override(self, before):
-        mod = cst.MetadataWrapper(
-            cst.parse_module(self.make_fixture_data(before))
-        )
-        mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
-        return CodemodContext(wrapper=mod)
-
-
 class TestUnpackTargetAssignments(CodemodTest):
     TRANSFORM = remove_exceptions.UnpackTargetAssignments
 
@@ -294,6 +295,41 @@ class TestDesugarSetSyntax(CodemodTest):
         x = Set([1,2])
         """
         self.assertCodemod(before, after)
+
+
+@unittest.skip("NEED TO IMPLEMENT")
+class TestRewriteEncodeAndDecodeToCodecs(MetadataResolvingCodemodTest):
+    TRANSFORM = None
+
+    def test_convert_dotencode_to_codecsdotencode(self):
+        before = """
+        pem_key_chunks = [('-----BEGIN %s-----' % marker).encode('utf-8')]
+        """
+
+        after = """
+        pem_key_chunks = [codecs.encode(('-----BEGIN %s-----' % marker), encoding='utf-8')]
+        """
+
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+
+@unittest.skip("NEED TO IMPLEMENT")
+class TestRewriteImplicitStringConcat(MetadataResolvingCodemodTest):
+    TRANSFORM = None
+
+    def test_convert_implicit_string_concat(self):
+        before = """
+        print("Attempting to verify a message with a private key. "
+              "This is not recommended.")
+        """
+
+        after = """
+        print("Attempting to verify a message with a private key. " +
+              "This is not recommended.")        
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
 
 
 class TestTopLevelExceptionRemoval(MetadataResolvingCodemodTest):
@@ -499,6 +535,7 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
         """
         self.assertCodemod(before, after)
 
+    @unittest.skip("THIS TEST WORKS BUT RUNNING THIS FAILS ON REAL CODE")
     def test_delete_stararg_in_constructors(self):
         before = """
         class XMLPullParser:
@@ -989,5 +1026,94 @@ class TestDelKeyword(MetadataResolvingCodemodTest):
                     operator.delitem(_namespace_map, k)
             _namespace_map[uri] = prefix
         """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+
+@pytest.mark.usefixtures("simple_class_before")
+class TestRewriteTestCases(MetadataResolvingCodemodTest):
+
+    TRANSFORM = rewrite_class.RewriteTestCases
+    #
+    # @pytest.fixture(autouse=True)
+    # def fixture(self, simple_class):
+    #     self.before = simple_class
+    @unittest.skip("will fail")
+    def test_rewrite_test_cases(self):
+        print(self.before_transform)
+        before = self.before_transform
+
+        after = """
+        class Foo:
+            def close(self):
+                '''Finish feeding data to parser and return element structure.
+                '''
+                try:
+                    self.parser.Parse("", 1)  # end of data
+                except self._error as v:
+                    self._raiseerror(v)
+                try:
+                    close_handler = self.target.close
+                except AttributeError:
+                    pass
+                else:
+                    return close_handler()
+                finally:
+                    # get rid of circular references
+                    # del self.parser, self._parser
+                    pass
+                    # del self.target, self._target
+                    pass
+            def __delitem__(self, index):
+                operator.delitem(self._children, index)
+
+        def register_namespace(prefix, uri):
+            '''Register a namespace prefix.
+        
+            The registry is global, and any existing mapping for either the
+            given prefix or the namespace URI will be removed.
+        
+            *prefix* is the namespace prefix, *uri* is a namespace uri. Tags and
+            attributes in this namespace will be serialized with prefix if possible.
+        
+            ValueError is raised if prefix is reserved or is invalid.
+        
+            '''
+            if re.match("ns\d+$", prefix):
+                raise ValueError("Prefix format reserved for internal use")
+            for k, v in list(_namespace_map.items()):
+                if k == uri or v == prefix:
+                    operator.delitem(_namespace_map, k)
+            _namespace_map[uri] = prefix
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+    def test_rewrite_simple_class(self):
+        before = """
+        class B(unittest.TestCase):
+            foo = 'manchu'
+            bar = []
+        
+            def test_do_baz(self):
+                self.assertEqual(1, 1)
+        
+            def test_do_it_again(self):
+                # do something
+                bar2 = [int(x) for x in self.bar]
+                self.assertEqual(bar2, map(int, self.bar))
+        """
+
+        after = """
+        foo = 'manchu'
+        bar = []
+        
+        def B_test_do_baz(self):
+            asserts.assert_that(1).is_equal_to(1)
+        
+        def B_test_do_it_again(self):
+            # do something
+            bar2 = [int(x) for x in self.bar]
+            asserts.assert_that(bar2).is_equal_to(map(int, self.bar))"""
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
