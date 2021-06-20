@@ -1,5 +1,8 @@
  # Roadmap
 
+### string formatting
+
+- `return "".join(["%02x" % bord(x) for x in self.digest()])` "%02x" is not supported :(
 
 ### imports     
 
