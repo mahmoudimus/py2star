@@ -38,16 +38,21 @@ class RewriteMe(TestCase):
         return x
 
     def test_success(self):
-        self.assertEqual(1, 1)
+        self.assertNotEqual(1, 2)
         self.assertIsNone(None)
         self.assertIsNotNone([])
         self.assertTrue(True)
 
     def test_fail(self):
-        self.assertNotEqual(1, 2)
+        self.assertEqual(1, 1)
 
     def test_doit(self):
+        x = "foo"
         self.assertRegex("herpa", "her.*", "could not find herpa")
+        self.assertNotRegex(x, "xxx")
+        self.assertRaisesRegex(
+            RuntimeError, "text .* match", len, foo=42, bar=43
+        )
 
     def test_fstring(self) -> str:
         foo = 1

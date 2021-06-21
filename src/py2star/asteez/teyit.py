@@ -1,15 +1,22 @@
 import argparse
+import binascii
+import re
+import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Callable, List, Tuple
-import re
-
+from typing import Callable, List, Union
 
 import libcst as cst
 import libcst.codemod
 import libcst.matchers as m
+from libcst import (
+    BaseStatement,
+    FlattenSentinel,
+    RemovalSentinel,
+    With,
+)
 
 OPERATOR_TABLE = {
     cst.Equal: "assertEqual",
@@ -29,19 +36,22 @@ CONTRA_OPS = {cst.Equal: cst.NotEqual, cst.In: cst.NotIn, cst.Is: cst.IsNot}
 for key, value in CONTRA_OPS.copy().items():
     CONTRA_OPS[value] = key
 
-DEPRECATED_ALIASES = {
-    "assert_": "assertTrue",
-    "failIf": "assertFalse",
-    "failUnless": "assertTrue",
-    "assertEquals": "assertEqual",
-    "failIfEqual": "assertNotEqual",
-    "failUnlessEqual": "assertEqual",
-    "assertNotEquals": "assertNotEqual",
-    "assertAlmostEquals": "assertAlmostEqual",
-    "failIfAlmostEqual": "assertNotAlmostEqual",
-    "failUnlessAlmostEqual": "assertAlmostEqual",
-    "assertNotAlmostEquals": "assertNotAlmostEqual",
-}
+
+TEMPLATE_PATTERN = re.compile("[\1\2]|[^\1\2]+")
+
+
+def fill_template(template, *args):
+    parts = TEMPLATE_PATTERN.findall(template)
+    kids = []
+    for p in parts:
+        if p == "":
+            continue
+        elif p in "\1\2\3\4\5":
+            p = args[ord(p) - 1]
+            p = p.with_changes(comma=None)  # strip trailing comma, if any.
+            p = _codegen.code_for_node(p)
+        kids.append(p)
+    return "".join(kids)
 
 
 @dataclass
@@ -93,109 +103,52 @@ def raises_op(exc_cls, *args):
     asserts.assert_fails(lambda: -1 in b("abc"), "-1 not in range")
 
     """
-    print(args)
-    invokable = "lambda x: x"
-    regex = '".*"'
-    return cst.parse_expression(f"asserts.assert_fails({invokable}, {regex})")
+    # print(args)
+    # asserts.assert_fails(, f".*?{exc_cls.value.value}")
+    invokable = _codegen.code_for_node(
+        cst.Call(func=args[0].value, args=args[1:])
+    )
+    regex = f'".*?{exc_cls.value.value}"'
+    return cst.parse_expression(
+        f"asserts.assert_fails(lambda: {invokable}, {regex})"
+    )
 
 
-@arity(5)
-def regex_op(exc_cls, *args):
+@arity(6)
+def raises_regex_op(exc_cls, regex, *args):
     """
-    assertRaises(exception, callable, *args, **kwds)
-    assertRaises(exception, *, msg=None)
+    self.assertRaisesRegex(
+                ValueError, "invalid literal for.*XYZ'$", int, "XYZ"
+            )
 
-    # Test that an exception is raised when callable is called with any
-    # positional or keyword arguments that are also passed to
-    # assertRaises().
-
-    asserts.assert_fails(lambda: -1 in b("abc"), "-1 not in range")
+    asserts.assert_fails(lambda: int("XYZ"),
+                         ".*?ValueError.*izznvalid literal for.*XYZ'$")
 
     """
-    print(args)
-    invokable = lambda x: x
-    regex = ".*"
-    return cst.parse_expression(f"asserts.assert_fails({invokable}, {regex})")
+    # print(args)
+    # asserts.assert_fails(, f".*?{exc_cls.value.value}")
+    invokable = _codegen.code_for_node(
+        cst.Call(
+            func=args[0].value,
+            args=[
+                a.with_changes(
+                    whitespace_after_arg=cst.SimpleWhitespace(value="")
+                )
+                for a in args[1:]
+            ],
+        )
+    )
+    regex = f'".*?{exc_cls.value.value}.*{regex.value.evaluated_value}"'
+    return cst.parse_expression(
+        f"asserts.assert_fails(lambda: {invokable}, {regex})"
+    )
 
 
-# def raises_op(context, exceptionClass, indent, kws, arglist, node):
-#     # asserts.assert_fails(lambda: -1 in b("abc"), "int in bytes: -1 out of range")
-#     exceptionClass.prefix = ""
-#     args = [
-#         String('"', prefix=" "),  # unquoted on purpose
-#         String(".*?"),  # match anything until the exception we are looking for
-#         String(f"{str(exceptionClass)}"),
-#     ]
-#     # this would be the second parameter
-#     # Add match keyword arg to with statement if an expected regex was provided.
-#     if "expected_regex" in kws:
-#         expected_regex = kws.get("expected_regex").clone()
-#         expected_regex.prefix = ""
-#         args.append(String(".*"))
-#         args.append(expected_regex)
-#     args.append(String('"'))  # close quote
-#
-#     # # assertRaises(exception, callable, *args, **kwds)
-#     # # assertRaises(exception, *, msg=None)
-#     # # Test that an exception is raised when callable is called with any
-#     # # positional or keyword arguments that are also passed to
-#     # # assertRaises().
-#     # # To catch any of a group of exceptions, a tuple containing the
-#     # # exception classes may be passed as exception.
-#     # with_item = Call(Name(context), args) # pytest.raises(TypeError)
-#     # with_item.prefix = " "
-#     # args = []
-#     arglist = [a.clone() for a in arglist.children[4:]]
-#     if arglist:
-#         arglist[0].prefix = ""
-#
-#     func = None
-#
-#     # :fixme: this uses hardcoded parameter names, which may change
-#     if "callableObj" in kws:
-#         func = kws["callableObj"]
-#     elif "callable_obj" in kws:
-#         func = kws["callable_obj"]
-#     elif kws["args"]:  # any arguments assigned to `*args`
-#         func = kws["args"][0]
-#     else:
-#         func = None
-#
-#     if func and func.type == syms.lambdef:
-#         suite = func.children[-1].clone()
-#     else:
-#         if func is None:
-#             # Context manager, so let us convert it to a function definition
-#             # let us create a function first.
-#             func = get_funcdef_node(
-#                 funcname=_rand(),
-#                 args=[],
-#                 body=arglist,
-#                 decorators=[],
-#                 indentation_level=1,
-#             )
-#             # append it as a child to the root node
-#             find_root(node).append_child(func)
-#             # return Node(syms.with_stmt, [with_item])
-#         # TODO: Newlines within arguments are not handled yet.
-#         # If argment prefix contains a newline, all whitespace around this
-#         # ought to be replaced by indent plus 4+1+len(func) spaces.
-#         suite = get_lambdef_node([Call(Name(str(func)), arglist)])
-#
-#     # suite.prefix = indent + (4 * " ")
-#     # new = Node(
-#     #     syms.power,
-#     #     # trailer< '.' 'is_equal_to' > trailer< '(' '2' ')' > >
-#     #     Attr(_left_asserts, Name(op))
-#     #     + [Node(syms.trailer, [LParen(), right, RParen()])],
-#     # )
-#     return Call(
-#         Name("assert_fails"),
-#         args=[suite, Comma()] + args,
-#     )
-#     # return Node(
-#     #     syms.with_stmt, [Name("with"), with_item, Name(":"), Newline(), suite]
-#     # )
+@arity(3)
+def dual_op(template, first, second, error_msg=None, op="is_not_none"):
+    # TODO: add error_msg to assertpy
+    kids = fill_template(template, first, second)
+    return cst.parse_expression(f"asserts.assert_that({kids}).{op}()")
 
 
 _method_map = {
@@ -208,7 +161,10 @@ _method_map = {
     "assertTupleEqual": partial(comp_op, "is_equal_to"),
     "assertSequenceEqual": partial(comp_op, "is_equal_to"),
     "assertEqual": partial(comp_op, "is_equal_to"),
+    "failUnlessEqual": partial(comp_op, "is_equal_to"),
     "assertNotEqual": partial(comp_op, "is_not_equal_to"),
+    "failIfEqual": partial(comp_op, "is_not_equal_to"),
+    "assertNotEquals": partial(comp_op, "is_not_equal_to"),
     "assertIs": partial(comp_op, "is_equal_to"),
     "assertGreater": partial(comp_op, "is_greater_than"),
     "assertLessEqual": partial(comp_op, "is_lte_to"),
@@ -220,49 +176,37 @@ _method_map = {
     "assertIsInstance": partial(comp_op, "is_instance_of"),
     "assertNotIsInstance": partial(comp_op, "is_not_instance_of"),
     # unary operations
+    "assertFalse": partial(unary_op, "is_false"),
     "assertIsNone": partial(unary_op, "is_none"),
     "assertIsNotNone": partial(unary_op, "is_not_none"),
-    "assertFalse": partial(unary_op, "is_false"),
-    "failIf": partial(unary_op, "is_false"),
     "assertTrue": partial(unary_op, "is_true"),
-    "failUnless": partial(unary_op, "is_true"),
     "assert_": partial(unary_op, "is_true"),
+    "failIf": partial(unary_op, "is_false"),
+    "failUnless": partial(unary_op, "is_true"),
     # "exceptions" in larky do not exist but we have asserts.assert_fails...
-    "assertRaises": partial(raises_op, "asserts"),
-    # "assertWarns": partial(raises_op, "asserts"),
-    # # types ones
-    # "assertDictContainsSubset": partial(dual_op, "dict(\2, **\1) == \2"),
-    # "assertItemsEqual": partial(dual_op, "sorted(\1) == sorted(\2)"),
+    "assertRaises": partial(raises_op),
+    # types ones
+    "assertDictContainsSubset": partial(
+        dual_op, "dict(\2, **\1) == \2", op="is_true"
+    ),
+    "assertItemsEqual": partial(
+        dual_op, "sorted(\1) == sorted(\2)", op="is_true"
+    ),
     "assertRegex": partial(dual_op, "re.search(\2, \1)"),
-    # "assertNotRegex": partial(dual_op, "not re.search(\2, \1)"),  # new Py 3.2
+    "assertNotRegex": partial(
+        dual_op, "not re.search(\2, \1)", op="is_false"
+    ),  # new Py 3.2
+    # "assertWarns": partial(raises_op, "asserts"),
+    # "assertAlmostEquals": "assertAlmostEqual",
+    # "assertNotAlmostEquals": "assertNotAlmostEqual",
+    # "failIfAlmostEqual": "assertNotAlmostEqual",
+    # "failUnlessAlmostEqual": "assertAlmostEqual",
     # "assertAlmostEqual": partial(almost_op, "==", "<"),
     # "assertNotAlmostEqual": partial(almost_op, "!=", ">"),
-    # "assertRaisesRegex": partial(RaisesRegexOp, "pytest.raises", "excinfo"),
-    # "assertWarnsRegex": partial(RaisesRegexOp, "pytest.warns", "record"),
+    "assertRaisesRegex": partial(raises_regex_op),
+    "assertWarnsRegex": partial(raises_regex_op),  # this will fail, but w/e
     # 'assertLogs': -- not to be handled here, is an context handler only
 }
-
-TEMPLATE_PATTERN = re.compile("[\1\2]|[^\1\2]+")
-
-
-# def fill_template(template, *args):
-#     parts = TEMPLATE_PATTERN.findall(template)
-#     kids = []
-#     for p in parts:
-#         if p == "":
-#             continue
-#         elif p in "\1\2\3\4\5":
-#             p = args[ord(p) - 1]
-#             p.prefix = ""
-#         else:
-#             p = cst.Name(p)
-#         kids.append(p)
-#     return kids
-#
-#
-# def DualOp(template, first, second):
-#     kids = fill_template(template, first, second)
-#     return cst.Node(syms.test, kids, prefix=" ")
 
 
 def _build_matchers() -> List[Rewrite]:
@@ -283,30 +227,143 @@ def _build_matchers() -> List[Rewrite]:
     ]
 
 
-class TestTransformer(m.MatcherDecoratableTransformer):
-
+class TestTransformer(cst.codemod.ContextAwareTransformer):
+    METADATA_DEPENDENCIES = (cst.metadata.ParentNodeProvider,)
     matchers: List[Rewrite]
 
-    def __init__(self):
-        super(TestTransformer, self).__init__()
+    def __init__(self, context):
+        super(TestTransformer, self).__init__(context)
         self.matchers = _build_matchers()
 
-    def leave_Call(
-        self, original_node: cst.Call, updated_node: cst.BaseExpression
-    ) -> cst.BaseExpression:
-
+    # specialize with statements later.
+    @m.call_if_not_inside(m.With(m.DoNotCare()))
+    @m.leave(
+        m.Call(
+            func=m.Attribute(
+                value=m.Name("self"),
+                attr=m.Name(value=m.MatchRegex("(assert|fail).*")),
+            )
+        )
+    )
+    def rewrite_asserts_not_in_with_context(
+        self, original_node: "cst.Call", updated_node: "cst.Call"
+    ) -> "cst.BaseExpression":
         call = original_node
         args = call.args
-
         for match in self.matchers:
             if not m.matches(call, match.matcher):
                 continue
-            if len(args) != match.arity:
-                continue
-            _args = [args[i] for i in range(match.arity)]
+            # if len(args) != match.arity:
+            #     continue
+            _args = args  # [args[i] for i in range(match.arity)]
             return match.replacement(*_args)
 
         return updated_node
+
+    # specialize with statements later.
+    # @m.call_if_inside(m.With(m.DoNotCare()))
+    # @m.leave(
+    #     m.With(
+    #         items=[
+    #             m.AtLeastN(
+    #                 n=1,
+    #                 matcher=m.WithItem(
+    #                     item=m.Call(
+    #                         func=m.Attribute(
+    #                             value=m.Name("self"),
+    #                             attr=m.Name(value=m.MatchRegex("assert.*")),
+    #                         )
+    #                     )
+    #                 ),
+    #             )
+    #         ]
+    #     )
+    # )
+    def leave_With(
+        self, original_node: "With", updated_node: "With"
+    ) -> Union[
+        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
+    ]:
+        query = m.With(
+            items=[
+                m.AtLeastN(
+                    n=1,
+                    matcher=m.WithItem(
+                        item=m.Call(
+                            func=m.Attribute(
+                                value=m.Name("self"),
+                                attr=m.Name(value=m.MatchRegex("assert.*")),
+                            )
+                        )
+                    ),
+                )
+            ]
+        )
+        if not m.matches(original_node, query):
+            # print(">>>>> ", updated_node)
+            return updated_node
+        # gp.body.body[0].with_changes(trailing_whitespace=cst.TrailingWhitespace(newline=cst.Newline(value='')))
+        func = cst.FunctionDef(
+            name=cst.Name(_rand()),
+            params=cst.Parameters(),
+            body=updated_node.body,
+        )
+        # if regex:
+        #     xxxx
+        # else:
+        #     xxxx
+        assert_stmt = raises_op(
+            updated_node.items[0].item.args[0], cst.Arg(value=func.name)
+        )
+        # p = self.get_metadata(cst.metadata.ParentNodeProvider, original_node)
+        # if not isinstance(p, cst.FunctionDef):
+        #     # no idea.. what to do? parent isn't a function!
+        #     return updated_node
+        # var = p.body
+        # var.deep_replace(updated_node, )
+        # p.deep_replace(updated_node, )
+        return cst.FlattenSentinel(
+            [
+                func,
+                cst.SimpleStatementLine(
+                    body=[cst.Expr(value=assert_stmt)],
+                    leading_lines=updated_node.leading_lines,
+                ),
+            ]
+        )
+        # return updated_node
+
+    # def rewrite_asserts_in_with_conteaxt(
+    #     self, original: "cst.Call", updated: "cst.Call"
+    # ) -> "cst.BaseExpression":
+    #     node = self.get_metadata(cst.metadata.ParentNodeProvider, original)
+    #     while not isinstance(node, cst.With):
+    #         node = self.get_metadata(cst.metadata.ParentNodeProvider, node)
+    #     gp = cst.ensure_type(node, cst.With)
+    #     # grandparent = self.get_metadata(cst.metadata.ParentNodeProvider, gp)
+    #     # _codegen.code_for_node(gp.body.body[0].with_changes(trailing_whitespace=cst.TrailingWhitespace(newline=cst.Newline(value=''))))
+    #     print("GOT HERE?")
+    #     print(gp)
+    #     # exception = updated.args[0].value.value
+    #     # with self.assertRaises(TypeError):
+    #     #     s.split(2)
+    #     # self.assertRaises(lambda: s.split(2), ".*?TypeError")
+    #
+    #     # gp = gp.deep_replace(
+    #     #     gp,
+    #     #     cst.FunctionDef(
+    #     #         name=cst.Name("_larky_xxx"),
+    #     #         params=cst.Parameters(),
+    #     #         body=gp.body,
+    #     #     ),
+    #     # )
+    #     # print(_codegen.code_for_node(gp))
+    #     # return gp
+    #     return updated
+
+
+def _rand():
+    return f"_larky_{binascii.crc32(uuid.uuid4().bytes)}"
 
 
 def rewrite_module(code: str) -> str:
@@ -429,11 +486,16 @@ def rewrite_source(source, *, blacklist=frozenset()):
 
     with open(source, "rb") as f:
         tree = cst.parse_module(f.read())
-        context = cst.codemod.CodemodContext()
+        # context = cst.codemod.CodemodContext()
         # rewriter = _AssertRewriter(context=context, blacklist=blacklist)
-        rewriter = TestTransformer()
-        tree = tree.visit(rewriter)
-        return tree.code
+        # rewriter = TestTransformer()
+        # tree = tree.visit(rewriter)
+        mod = cst.MetadataWrapper(tree)
+        ctx = cst.codemod.CodemodContext(wrapper=mod)
+        transformer = TestTransformer(ctx)
+        modified_tree = mod.visit(transformer)
+        # modified_tree = tree.visit(transformer)
+        return modified_tree.code
 
 
 def main():
