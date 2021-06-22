@@ -247,6 +247,12 @@ def _rand(seed=None):
 
 
 class AssertStatementRewriter(cst.codemod.ContextAwareTransformer):
+    """
+    Converts unittest assert methods to larky asserts, i.e.:
+
+    - self.assertEquals(xx, yy) => asserts.assert_that(xx).is_equal_to(yy)
+    """
+
     METADATA_DEPENDENCIES = (cst.metadata.ParentNodeProvider,)
     matchers: List[Rewrite]
 
@@ -348,6 +354,16 @@ class DedentModule(codemod.ContextAwareTransformer):
 
 
 class Unittest2Functions(codemod.ContextAwareTransformer):
+    """
+    For all functions in a class, this will:
+    - Strip self from functions in classes => (def z(self) => def(z))
+    - Strip class instance variables (self.foo => foo)
+    - Prefix method with class name (class Foo: def bar().. => def Foo__bar())
+
+    For entire module:
+    - dedents it
+    """
+
     def __init__(self, context: CodemodContext, class_name=None):
         super(Unittest2Functions, self).__init__(context)
         self.class_name = class_name

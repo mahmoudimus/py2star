@@ -21,6 +21,7 @@ from py2star.asteez import (
     rewrite_comparisons,
     rewrite_imports,
     rewrite_loopz,
+    rewrite_tests,
 )
 from py2star.tokenizers import find_definitions
 from py2star.utils import ReIndenter
@@ -120,7 +121,18 @@ def fixup_indentation(fileobj):
         return o.getvalue()
 
 
-def onfixes(filename, fixers, doprint=True):
+def safe_read(filename):
+    encoding = detect_encoding(filename)
+    try:
+        with open(filename, encoding=encoding) as f:
+            out = fixup_indentation(f)
+    except IOError as msg:
+        logger.exception("%s: I/O Error: %s", filename, msg)
+        raise msg
+    return out
+
+
+def onfixes(out, fixers, doprint=True):
     if not fixers:
         _fixers = refactor.get_fixers_from_package("py2star.fixes")
     else:
@@ -130,14 +142,6 @@ def onfixes(filename, fixers, doprint=True):
             for x in fixers
             if i.endswith(x)
         ]
-
-    encoding = detect_encoding(filename)
-    try:
-        with open(filename, encoding=encoding) as f:
-            out = fixup_indentation(f)
-    except IOError as msg:
-        logger.exception("%s: I/O Error: %s", filename, msg)
-        return
 
     # out = _lib3to6(filename, out)
 
@@ -177,10 +181,13 @@ def _lib3to6(filename, source_text, install_requires=None, mode="enabled"):
 
 
 def larkify(filename, args):
-    # TODO: dynamic
-    # asteez.get_ast_rewriters_from_package("py2star.asteez")
+    # TODO: select larkifiers dynamically? maybe look into instagram/fixers?
     fixers = args.fixers
-    out = onfixes(filename, fixers, doprint=False)
+    out = safe_read(filename)
+    if fixers:
+        doprint = args.log_level.lower() == "debug"
+        out = onfixes(out, fixers, doprint=doprint)
+
     program = libcst.parse_module(out)
     wrapper = libcst.MetadataWrapper(program)
     context = CodemodContext(
@@ -206,9 +213,10 @@ def larkify(filename, args):
 
     # must run last otherwise messes up all the other transformers above
     if args.for_tests:
+        # TODO: can this by dynamic so we don't pass this in?
         transformers += [
-            rewrite_class.FunctionParameterStripper(context, ["self"]),
-            rewrite_class.ClassInstanceVariableRemover(context, ["self"]),
+            rewrite_tests.AssertStatementRewriter(context),
+            rewrite_tests.Unittest2Functions(context),
         ]
     else:
         # we don't want class to function rewriter for tests since
@@ -236,7 +244,12 @@ def larkify(filename, args):
         logger.debug("running transformer: %s", t)
         with t.resolve(wrapper):
             program = t.transform_module(program)
+
     print(program.code)
+    if args.for_tests:
+        tree = ast.parse(program.code)
+        s = functionz.testsuite_generator(tree)
+        print(s)
 
 
 DOT_PY: Pattern[str] = re.compile(r"(__init__)?\.py$")
