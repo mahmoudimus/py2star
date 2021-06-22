@@ -60,7 +60,7 @@ def test_remove_self(source_tree):
     tree = source_tree
     for l in [
         rewrite_class.FunctionParameterStripper(context, ["self"]),
-        rewrite_class.AttributeGetter(context, ["self"]),
+        rewrite_class.ClassInstanceVariableRemover(context, ["self"]),
     ]:
         tree = tree.visit(l)
 
@@ -1031,63 +1031,9 @@ class TestDelKeyword(MetadataResolvingCodemodTest):
         self.assertCodemod(before, after, context_override=ctx)
 
 
-@pytest.mark.usefixtures("simple_class_before")
 class TestUnittest2Functions(MetadataResolvingCodemodTest):
 
     TRANSFORM = rewrite_tests.Unittest2Functions
-    #
-    # @pytest.fixture(autouse=True)
-    # def fixture(self, simple_class):
-    #     self.before = simple_class
-    @unittest.skip("will fail")
-    def test_rewrite_test_cases(self):
-        before = self.before_transform
-
-        after = """
-        class Foo:
-            def close(self):
-                '''Finish feeding data to parser and return element structure.
-                '''
-                try:
-                    self.parser.Parse("", 1)  # end of data
-                except self._error as v:
-                    self._raiseerror(v)
-                try:
-                    close_handler = self.target.close
-                except AttributeError:
-                    pass
-                else:
-                    return close_handler()
-                finally:
-                    # get rid of circular references
-                    # del self.parser, self._parser
-                    pass
-                    # del self.target, self._target
-                    pass
-            def __delitem__(self, index):
-                operator.delitem(self._children, index)
-
-        def register_namespace(prefix, uri):
-            '''Register a namespace prefix.
-        
-            The registry is global, and any existing mapping for either the
-            given prefix or the namespace URI will be removed.
-        
-            *prefix* is the namespace prefix, *uri* is a namespace uri. Tags and
-            attributes in this namespace will be serialized with prefix if possible.
-        
-            ValueError is raised if prefix is reserved or is invalid.
-        
-            '''
-            if re.match("ns\d+$", prefix):
-                raise ValueError("Prefix format reserved for internal use")
-            for k, v in list(_namespace_map.items()):
-                if k == uri or v == prefix:
-                    operator.delitem(_namespace_map, k)
-            _namespace_map[uri] = prefix
-        """
-        ctx = self._get_context_override(before)
-        self.assertCodemod(before, after, context_override=ctx)
 
     def test_rewrite_simple_class(self):
         before = """
@@ -1108,13 +1054,17 @@ class TestUnittest2Functions(MetadataResolvingCodemodTest):
         foo = 'manchu'
         bar = []
         
-        def B_test_do_baz(self):
+        def B_test_do_baz():
             asserts.assert_that(1).is_equal_to(1)
         
-        def B_test_do_it_again(self):
+        def B_test_do_it_again():
             # do something
-            bar2 = [int(x) for x in self.bar]
-            asserts.assert_that(bar2).is_equal_to(map(int, self.bar))"""
+            bar2 = [int(x) for x in bar]
+            asserts.assert_that(bar2).is_equal_to(map(int, bar))"""
+        # lets re-write the assert statements
+        ctx = TestAssertStatementRewriter()._get_context_override(before)
+        rewriter = rewrite_tests.AssertStatementRewriter(ctx)
+        before = ctx.module.visit(rewriter).code
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
 
@@ -1124,6 +1074,9 @@ class TestAssertStatementRewriter(MetadataResolvingCodemodTest):
 
     TRANSFORM = rewrite_tests.AssertStatementRewriter
 
+    # @pytest.fixture(autouse=True)
+    # def fixture(self, simple_class):
+    #     self.before = simple_class
     def test_assert_statement_rewriter(self):
         before = self.before_transform
 

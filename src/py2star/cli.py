@@ -208,7 +208,7 @@ def larkify(filename, args):
     if args.for_tests:
         transformers += [
             rewrite_class.FunctionParameterStripper(context, ["self"]),
-            rewrite_class.AttributeGetter(context, ["self"]),
+            rewrite_class.ClassInstanceVariableRemover(context, ["self"]),
         ]
     else:
         # we don't want class to function rewriter for tests since

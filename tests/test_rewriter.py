@@ -2,9 +2,12 @@ import logging
 from lib2to3 import refactor
 from textwrap import dedent
 
+import pytest
+
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.skip("unused")
 def test_rewrite(simple_class, lib2to3_xfrms):
     _fixers = refactor.get_fixers_from_package("py2star.fixes")
     assert isinstance(_fixers, list) and len(_fixers) != 0

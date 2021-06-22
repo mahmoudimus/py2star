@@ -431,11 +431,11 @@ class FunctionParameterStripper(codemod.ContextAwareTransformer):
         return modified_params
 
 
-class AttributeGetter(codemod.ContextAwareTransformer):
+class ClassInstanceVariableRemover(codemod.ContextAwareTransformer):
     DESCRIPTION = "AttributeGetter(ctx, ['self']): self.foo() => foo()"
 
     def __init__(self, context: CodemodContext, namespace: typing.List):
-        super(AttributeGetter, self).__init__(context)
+        super(ClassInstanceVariableRemover, self).__init__(context)
         self.namespace = [m.Name(n) for n in namespace]
 
     def leave_Attribute(

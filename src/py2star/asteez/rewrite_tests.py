@@ -19,8 +19,10 @@ from libcst import (
     RemovalSentinel,
     With,
 )
+from libcst.codemod.visitors import AddImportsVisitor, RemoveImportsVisitor
 
 from py2star.asteez.rewrite_class import (
+    ClassInstanceVariableRemover,
     FunctionParameterStripper,
     PrefixMethodByClsName,
     UndecorateClassMethods,
@@ -275,6 +277,7 @@ class AssertStatementRewriter(cst.codemod.ContextAwareTransformer):
             _args = args  # [args[i] for i in range(match.arity)]
             return match.replacement(*_args)
 
+        AddImportsVisitor.add_needed_import(self.context, "asserts")
         return updated_node
 
     def leave_With(
@@ -375,6 +378,7 @@ class Unittest2Functions(codemod.ContextAwareTransformer):
         un = updated_node.visit(
             FunctionParameterStripper(self.context, ["self"])
         )
+        un = un.visit(ClassInstanceVariableRemover(self.context, ["self"]))
         un = un.visit(UndecorateClassMethods(self.context))
         un = un.visit(PrefixMethodByClsName(self.context, self.class_name))
         return un
@@ -382,6 +386,10 @@ class Unittest2Functions(codemod.ContextAwareTransformer):
     def leave_Module(
         self, original_node: "cst.Module", updated_node: "cst.Module"
     ) -> "cst.Module":
-        print("Got here!")
+        # TestCase
+        RemoveImportsVisitor.remove_unused_import(
+            self.context, "unittest", asname="TestCase"
+        )
+        AddImportsVisitor.add_needed_import(self.context, "unittest")
         dedenter = DedentModule(self.context)
-        updated_node.visit(dedenter)
+        return updated_node.visit(dedenter)
