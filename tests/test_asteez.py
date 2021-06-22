@@ -15,6 +15,7 @@ from py2star.asteez import (
     rewrite_fstring,
     rewrite_imports,
     rewrite_loopz,
+    rewrite_tests,
 )
 
 logger = logging.getLogger(__name__)
@@ -1031,16 +1032,15 @@ class TestDelKeyword(MetadataResolvingCodemodTest):
 
 
 @pytest.mark.usefixtures("simple_class_before")
-class TestRewriteTestCases(MetadataResolvingCodemodTest):
+class TestUnittest2Functions(MetadataResolvingCodemodTest):
 
-    TRANSFORM = rewrite_class.RewriteTestCases
+    TRANSFORM = rewrite_tests.Unittest2Functions
     #
     # @pytest.fixture(autouse=True)
     # def fixture(self, simple_class):
     #     self.before = simple_class
     @unittest.skip("will fail")
     def test_rewrite_test_cases(self):
-        print(self.before_transform)
         before = self.before_transform
 
         after = """
@@ -1115,5 +1115,129 @@ class TestRewriteTestCases(MetadataResolvingCodemodTest):
             # do something
             bar2 = [int(x) for x in self.bar]
             asserts.assert_that(bar2).is_equal_to(map(int, self.bar))"""
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+
+@pytest.mark.usefixtures("simple_class_before")
+class TestAssertStatementRewriter(MetadataResolvingCodemodTest):
+
+    TRANSFORM = rewrite_tests.AssertStatementRewriter
+
+    def test_assert_statement_rewriter(self):
+        before = self.before_transform
+
+        after = r'''
+        from unittest import TestCase
+        import unittest
+        
+        
+        def AES(key, mode, nonce=None):
+            print(key, mode, nonce)
+            raise ValueError(f"{key}, {mode}, {nonce}")
+        
+        
+        class RewriteMe(TestCase):
+            def bar(self, q, w, z):
+                # this does some stuff
+                return [q, w, z]
+        
+            def xor(self, baz):
+                # multi
+                # line
+                # comment
+                pass
+        
+            def write(self):
+                return self.__dict__.get("foo")
+        
+            def do_it(self):
+                x = b"foo"
+                return x
+        
+            def do_it2(self):
+                x = b"fxxx\x80"
+                return x
+        
+            def do_it3(self):
+                x = b"\x01\x00\x10\x80"
+                return x
+        
+            def do_it4(self):
+                x = b"fo0\x7F"
+                return x
+        
+            def test_success(self):
+                asserts.assert_that(1).is_not_equal_to(2)
+                asserts.assert_that(None).is_none()
+                asserts.assert_that([]).is_not_none()
+                asserts.assert_that(True).is_true()
+        
+            def test_fail(self):
+                asserts.assert_that(1).is_equal_to(1)
+        
+            def test_doit(self):
+                x = "foo"
+                asserts.assert_that(re.search("her.*", "herpa")).is_not_none()
+                asserts.assert_that(not re.search("xxx", x)).is_false()
+                asserts.assert_fails(lambda: len(foo=42, bar=43), ".*?RuntimeError.*text .* match")
+        
+            def test_fstring(self) -> str:
+                foo = 1
+                return f"{foo}"
+        
+            def test_raises(self):
+                key_128 = 128
+                MODE_GCM = "gcm"
+                asserts.assert_fails(lambda: AES(key_128, MODE_GCM, nonce=b""), ".*?ValueError")
+        
+            def test_bool(self):
+                v1, v2, v3, v4 = (0, 10, -9, 2 ** 10)
+                asserts.assert_that(v1).is_false()
+                asserts.assert_that(bool(v1)).is_false()
+                asserts.assert_that(v2).is_true()
+                asserts.assert_that(bool(v2)).is_true()
+                asserts.assert_that(v3).is_true()
+                asserts.assert_that(v4).is_true()
+        
+            def test_upper(self):
+                asserts.assert_that("foo".upper()).is_equal_to("FOO")
+        
+            def test_isupper(self):
+                asserts.assert_that("FOO".isupper()).is_true()
+                asserts.assert_that("Foo".isupper()).is_false()
+        
+            def test_split(self):
+                s = "hello world"
+                asserts.assert_that(s.split()).is_equal_to(["hello", "world"])
+                def _larky_747221237():
+                    s.split(2)
+                # check that s.split fails when the separator is not a string
+                asserts.assert_fails(lambda: _larky_747221237(), ".*?TypeError")
+        
+                asserts.assert_fails(lambda: int("XYZ"), ".*?ValueError.*invalid literal for.*XYZ'$")
+                def _larky_597382238():
+                    int("XYZ")
+                asserts.assert_fails(lambda: _larky_597382238(), ".*?ValueError.*literal")
+        
+            def test_default_widget_size(self):
+                widget = "The widget"
+                asserts.assert_that(len(widget)).is_equal_to((50, 50))
+        
+            def test_even(self):
+                """
+                Test that numbers between 0 and 5 are all even.
+                """
+                for i in range(0, 6):
+                    with self.subTest(i=i):
+                        self.assertEqual(i % 2, 0)
+        
+            def test_warn(self):
+                asserts.assert_fails(lambda: len("XYZ"), ".*?DeprecationWarning.*len\(\) is deprecated")
+                def _larky_1432088325():
+                    len("/etc/passwd")
+        
+                asserts.assert_fails(lambda: _larky_1432088325(), ".*?RuntimeWarning.*unsafe frobnicating")
+'''
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)

@@ -304,24 +304,23 @@ class TestTransformer(cst.codemod.ContextAwareTransformer):
             return updated_node
         # gp.body.body[0].with_changes(trailing_whitespace=cst.TrailingWhitespace(newline=cst.Newline(value='')))
         func = cst.FunctionDef(
-            name=cst.Name(_rand()),
+            # for tests, we have predictable function names
+            name=cst.Name(_rand(_codegen.code_for_node(updated_node.body))),
             params=cst.Parameters(),
             body=updated_node.body,
         )
-        # if regex:
-        #     xxxx
-        # else:
-        #     xxxx
-        assert_stmt = raises_op(
-            updated_node.items[0].item.args[0], cst.Arg(value=func.name)
-        )
-        # p = self.get_metadata(cst.metadata.ParentNodeProvider, original_node)
-        # if not isinstance(p, cst.FunctionDef):
-        #     # no idea.. what to do? parent isn't a function!
-        #     return updated_node
-        # var = p.body
-        # var.deep_replace(updated_node, )
-        # p.deep_replace(updated_node, )
+        method_name = updated_node.items[0].item.func.attr.value.lower()
+        if "regex" in method_name:
+            # updated_node.items[0].item.func
+            assert_stmt = raises_regex_op(
+                updated_node.items[0].item.args[0],
+                updated_node.items[0].item.args[1],
+                cst.Arg(value=func.name),
+            )
+        else:
+            assert_stmt = raises_op(
+                updated_node.items[0].item.args[0], cst.Arg(value=func.name)
+            )
         return cst.FlattenSentinel(
             [
                 func,
@@ -331,39 +330,14 @@ class TestTransformer(cst.codemod.ContextAwareTransformer):
                 ),
             ]
         )
-        # return updated_node
-
-    # def rewrite_asserts_in_with_conteaxt(
-    #     self, original: "cst.Call", updated: "cst.Call"
-    # ) -> "cst.BaseExpression":
-    #     node = self.get_metadata(cst.metadata.ParentNodeProvider, original)
-    #     while not isinstance(node, cst.With):
-    #         node = self.get_metadata(cst.metadata.ParentNodeProvider, node)
-    #     gp = cst.ensure_type(node, cst.With)
-    #     # grandparent = self.get_metadata(cst.metadata.ParentNodeProvider, gp)
-    #     # _codegen.code_for_node(gp.body.body[0].with_changes(trailing_whitespace=cst.TrailingWhitespace(newline=cst.Newline(value=''))))
-    #     print("GOT HERE?")
-    #     print(gp)
-    #     # exception = updated.args[0].value.value
-    #     # with self.assertRaises(TypeError):
-    #     #     s.split(2)
-    #     # self.assertRaises(lambda: s.split(2), ".*?TypeError")
-    #
-    #     # gp = gp.deep_replace(
-    #     #     gp,
-    #     #     cst.FunctionDef(
-    #     #         name=cst.Name("_larky_xxx"),
-    #     #         params=cst.Parameters(),
-    #     #         body=gp.body,
-    #     #     ),
-    #     # )
-    #     # print(_codegen.code_for_node(gp))
-    #     # return gp
-    #     return updated
 
 
-def _rand():
-    return f"_larky_{binascii.crc32(uuid.uuid4().bytes)}"
+def _rand(seed=None):
+    if not seed:
+        seed = uuid.uuid4().bytes
+    if isinstance(seed, str):
+        seed = seed.encode("utf-8")
+    return f"_larky_{binascii.crc32(seed)}"
 
 
 def rewrite_module(code: str) -> str:

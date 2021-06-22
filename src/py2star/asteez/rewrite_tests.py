@@ -1,281 +1,387 @@
-from typing import Union
-import warnings
+import binascii
+import re
+import uuid
+import typing
+
+from dataclasses import dataclass
+from functools import partial
+
+from typing import Callable, List, Union
 
 import libcst as cst
+import libcst.codemod
+from libcst import codemod
+from libcst.codemod import CodemodContext
+import libcst.matchers as m
 from libcst import (
-    BaseSmallStatement,
     BaseStatement,
     FlattenSentinel,
-    Raise,
     RemovalSentinel,
-    Try,
-    codemod,
-    ensure_type,
+    With,
 )
-import libcst.matchers as m
-from libcst.codemod import CodemodContext
-from libcst.codemod.visitors import AddImportsVisitor
-from libcst.metadata import ParentNodeProvider
+
+from py2star.asteez.rewrite_class import (
+    FunctionParameterStripper,
+    PrefixMethodByClsName,
+    UndecorateClassMethods,
+)
 
 
-class DesugarDecorators(codemod.ContextAwareTransformer):
+OPERATOR_TABLE = {
+    cst.Equal: "assertEqual",
+    cst.NotEqual: "assertNotEqual",
+    cst.LessThan: "assertLess",
+    cst.LessThanEqual: "assertLessEqual",
+    cst.GreaterThan: "assertGreater",
+    cst.GreaterThanEqual: "assertGreaterEqual",
+    cst.In: "assertIn",
+    cst.NotIn: "assertNotIn",
+    cst.Is: "assertIs",
+    cst.IsNot: "assertIsNot",
+}
+
+CONTRA_OPS = {cst.Equal: cst.NotEqual, cst.In: cst.NotIn, cst.Is: cst.IsNot}
+
+for key, value in CONTRA_OPS.copy().items():
+    CONTRA_OPS[value] = key
+
+
+TEMPLATE_PATTERN = re.compile("[\1\2]|[^\1\2]+")
+
+
+def fill_template(template, *args):
+    parts = TEMPLATE_PATTERN.findall(template)
+    kids = []
+    for p in parts:
+        if p == "":
+            continue
+        elif p in "\1\2\3\4\5":
+            p = args[ord(p) - 1]
+            p = p.with_changes(comma=None)  # strip trailing comma, if any.
+            p = _codegen.code_for_node(p)
+        kids.append(p)
+    return "".join(kids)
+
+
+@dataclass
+class Rewrite:
+    matcher: m.Call
+    arity: int
+    replacement: Callable
+
+
+_codegen = cst.parse_module("")
+
+
+def arity(n):
+    def f(func):
+        func.arity = n
+        return func
+
+    return f
+
+
+@arity(2)
+def comp_op(op, lefty, righty):
+    left = _codegen.code_for_node(lefty.value)
+    right = _codegen.code_for_node(righty.value)
+    return cst.parse_expression(f"asserts.assert_that({left}).{op}({right})")
+
+
+@arity(1)
+def unary_op(op, suty):
+    """/Users/mahmoud/src/py-in-java/pycryptodome/lib/transform.py
+    /Users/mahmoud/src/py2star/transform1.py
+    Converts a method like: ``self.failUnless(True)`` to
+      asserts.assert_that(value).is_true()
     """
-    @decorator
-    def foo(a, b):
-        return True
+    sut = _codegen.code_for_node(suty.value)
+    return cst.parse_expression(f"asserts.assert_that({sut}).{op}()")
 
-    is the same as:
 
-    def foo(a, b):
-        return True
-    foo = decorator(foo)
+@arity(5)
+def raises_op(exc_cls, *args):
+    """
+    assertRaises(exception, callable, *args, **kwds)
+    assertRaises(exception, *, msg=None)
+
+    # Test that an exception is raised when callable is called with any
+    # positional or keyword arguments that are also passed to
+    # assertRaises().
+
+    asserts.assert_fails(lambda: -1 in b("abc"), "-1 not in range")
 
     """
+    # print(args)
+    # asserts.assert_fails(, f".*?{exc_cls.value.value}")
+    invokable = _codegen.code_for_node(
+        cst.Call(func=args[0].value, args=args[1:])
+    )
+    regex = f'".*?{exc_cls.value.value}"'
+    return cst.parse_expression(
+        f"asserts.assert_fails(lambda: {invokable}, {regex})"
+    )
 
-    @m.call_if_inside(m.ClassDef(decorators=[m.AtLeastN(n=1)]))
-    def leave_ClassDef(
-        self, original_node: "ClassDef", updated_node: "ClassDef"
-    ) -> Union[
-        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
-    ]:
-        warnings.warn(
-            "Decorators are not supported in Starlark. "
-            "Py2Star does not support transforming them either. "
-            "Please do this manually (if this transform is run *before* the "
-            "declass transform*)"
+
+@arity(6)
+def raises_regex_op(exc_cls, regex, *args):
+    """
+    self.assertRaisesRegex(
+                ValueError, "invalid literal for.*XYZ'$", int, "XYZ"
+            )
+
+    asserts.assert_fails(lambda: int("XYZ"),
+                         ".*?ValueError.*izznvalid literal for.*XYZ'$")
+
+    """
+    # print(args)
+    # asserts.assert_fails(, f".*?{exc_cls.value.value}")
+    invokable = _codegen.code_for_node(
+        cst.Call(
+            func=args[0].value,
+            args=[
+                a.with_changes(
+                    whitespace_after_arg=cst.SimpleWhitespace(value="")
+                )
+                for a in args[1:]
+            ],
         )
+    )
+    regex = f'".*?{exc_cls.value.value}.*{regex.value.evaluated_value}"'
+    return cst.parse_expression(
+        f"asserts.assert_fails(lambda: {invokable}, {regex})"
+    )
+
+
+@arity(3)
+def dual_op(template, first, second, error_msg=None, op="is_not_none"):
+    # TODO: add error_msg to assertpy
+    kids = fill_template(template, first, second)
+    return cst.parse_expression(f"asserts.assert_that({kids}).{op}()")
+
+
+_method_map = {
+    # simple equals
+    # asserts.eq(A, B) || asserts.assert_that(A).is_equal_to(B)
+    "assertDictEqual": partial(comp_op, "is_equal_to"),
+    "assertListEqual": partial(comp_op, "is_equal_to"),
+    "assertMultiLineEqual": partial(comp_op, "is_equal_to"),
+    "assertSetEqual": partial(comp_op, "is_equal_to"),
+    "assertTupleEqual": partial(comp_op, "is_equal_to"),
+    "assertSequenceEqual": partial(comp_op, "is_equal_to"),
+    "assertEqual": partial(comp_op, "is_equal_to"),
+    "failUnlessEqual": partial(comp_op, "is_equal_to"),
+    "assertNotEqual": partial(comp_op, "is_not_equal_to"),
+    "failIfEqual": partial(comp_op, "is_not_equal_to"),
+    "assertNotEquals": partial(comp_op, "is_not_equal_to"),
+    "assertIs": partial(comp_op, "is_equal_to"),
+    "assertGreater": partial(comp_op, "is_greater_than"),
+    "assertLessEqual": partial(comp_op, "is_lte_to"),
+    "assertLess": partial(comp_op, "is_less_than"),
+    "assertGreaterEqual": partial(comp_op, "is_gte_to"),
+    "assertIn": partial(comp_op, "is_in"),
+    "assertIsNot": partial(comp_op, "is_not_equal_to"),
+    "assertNotIn": partial(comp_op, "is_not_in"),
+    "assertIsInstance": partial(comp_op, "is_instance_of"),
+    "assertNotIsInstance": partial(comp_op, "is_not_instance_of"),
+    # unary operations
+    "assertFalse": partial(unary_op, "is_false"),
+    "assertIsNone": partial(unary_op, "is_none"),
+    "assertIsNotNone": partial(unary_op, "is_not_none"),
+    "assertTrue": partial(unary_op, "is_true"),
+    "assert_": partial(unary_op, "is_true"),
+    "failIf": partial(unary_op, "is_false"),
+    "failUnless": partial(unary_op, "is_true"),
+    # "exceptions" in larky do not exist but we have asserts.assert_fails...
+    "assertRaises": partial(raises_op),
+    "assertRaisesRegex": partial(raises_regex_op),
+    "assertWarnsRegex": partial(raises_regex_op),  # this will fail, but w/e
+    # types ones
+    "assertDictContainsSubset": partial(
+        dual_op, "dict(\2, **\1) == \2", op="is_true"
+    ),
+    "assertItemsEqual": partial(
+        dual_op, "sorted(\1) == sorted(\2)", op="is_true"
+    ),
+    "assertRegex": partial(dual_op, "re.search(\2, \1)"),
+    "assertNotRegex": partial(
+        dual_op, "not re.search(\2, \1)", op="is_false"
+    ),  # new Py 3.2
+    # "assertWarns": partial(raises_op, "asserts"),
+    # "assertAlmostEquals": "assertAlmostEqual",
+    # "assertNotAlmostEquals": "assertNotAlmostEqual",
+    # "failIfAlmostEqual": "assertNotAlmostEqual",
+    # "failUnlessAlmostEqual": "assertAlmostEqual",
+    # "assertAlmostEqual": partial(almost_op, "==", "<"),
+    # "assertNotAlmostEqual": partial(almost_op, "!=", ">"),
+    # 'assertLogs': -- not to be handled here, is an context handler only
+}
+
+
+def _build_matchers() -> List[Rewrite]:
+    return [
+        # e.g. self.assertEqual(a,b) => assert a == b
+        Rewrite(
+            matcher=m.Call(
+                func=m.Attribute(
+                    # e.g. self.assertEqual
+                    value=m.Name("self"),
+                    attr=m.Name(unittest_method),
+                )
+            ),
+            arity=replacement.func.arity,
+            replacement=replacement,
+        )
+        for unittest_method, replacement in _method_map.items()
+    ]
+
+
+def _rand(seed=None):
+    if not seed:
+        seed = uuid.uuid4().bytes
+    if isinstance(seed, str):
+        seed = seed.encode("utf-8")
+    return f"_larky_{binascii.crc32(seed)}"
+
+
+class AssertStatementRewriter(cst.codemod.ContextAwareTransformer):
+    METADATA_DEPENDENCIES = (cst.metadata.ParentNodeProvider,)
+    matchers: List[Rewrite]
+
+    def __init__(self, context):
+        super(AssertStatementRewriter, self).__init__(context)
+        self.matchers = _build_matchers()
+
+    # specialize with statements later.
+    @m.call_if_not_inside(m.With(m.DoNotCare()))
+    @m.leave(
+        m.Call(
+            func=m.Attribute(
+                value=m.Name("self"),
+                attr=m.Name(value=m.MatchRegex("(assert|fail).*")),
+            )
+        )
+    )
+    def rewrite_asserts_not_in_with_context(
+        self, original_node: "cst.Call", updated_node: "cst.Call"
+    ) -> "cst.BaseExpression":
+        call = original_node
+        args = call.args
+        for match in self.matchers:
+            if not m.matches(call, match.matcher):
+                continue
+            # if len(args) != match.arity:
+            #     continue
+            _args = args  # [args[i] for i in range(match.arity)]
+            return match.replacement(*_args)
+
         return updated_node
 
-    @m.call_if_inside(m.FunctionDef(decorators=[m.AtLeastN(n=1)]))
-    def leave_FunctionDef(
-        self, original_node: "FunctionDef", updated_node: "FunctionDef"
+    def leave_With(
+        self, original_node: "With", updated_node: "With"
     ) -> Union[
         "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
     ]:
-        fn = ensure_type(updated_node.name, cst.Name)
-        fn_name = fn
-        for d in reversed(updated_node.decorators):
-            # if decorator does not have arguments
-            if not m.matches(d.decorator, m.TypeOf(m.Call)):
-                # skip if it is not staticmethod or classmethod since these are
-                # meaningless in starlark
-                if d.decorator.value in ("staticmethod", "classmethod"):
-                    continue
-            fn = cst.Call(d.decorator, args=[cst.Arg(fn)])
-        result = cst.Assign(
-            targets=[cst.AssignTarget(target=fn_name)], value=fn
-        )
-        undecorated = updated_node.with_changes(decorators=[])
-        return cst.FlattenSentinel(
-            [undecorated, cst.SimpleStatementLine(body=[result])]
-        )
-
-
-class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
-    """
-    str.decode(xxxx) => codecs.decode(xxxx)
-    str.encode(xxxx) => codecs.encode(xxxx)
-
-    hex() => hexlify()
-    etc etc
-    """
-
-    pass
-
-
-class UnpackTargetAssignments(codemod.ContextAwareTransformer):
-    """
-    a = b = "xyz"
-
-    to:
-
-    a = "xyz"
-    b = a
-    """
-
-    @m.call_if_inside(
-        m.SimpleStatementLine(
-            body=[
-                m.Assign(
-                    targets=[m.AtLeastN(n=2, matcher=m.AssignTarget())],
-                    value=m.SimpleString(),
+        query = m.With(
+            items=[
+                m.AtLeastN(
+                    n=1,
+                    matcher=m.WithItem(
+                        item=m.Call(
+                            func=m.Attribute(
+                                value=m.Name("self"),
+                                attr=m.Name(value=m.MatchRegex("assert.*")),
+                            )
+                        )
+                    ),
                 )
             ]
         )
-    )
-    def leave_SimpleStatementLine(
-        self,
-        original_node: "SimpleStatementLine",
-        updated_node: "SimpleStatementLine",
-    ) -> Union[
-        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
-    ]:
-        assign_stmt = updated_node.body[0]
-        stmts = [
-            cst.SimpleStatementLine(
-                body=[
-                    cst.Assign(
-                        targets=[
-                            cst.AssignTarget(
-                                target=assign_stmt.targets[0].target
-                            ),
-                        ],
-                        value=assign_stmt.value,
-                    ),
-                ]
+        if not m.matches(original_node, query):
+            return updated_node
+        # gp.body.body[0].with_changes(
+        #         trailing_whitespace=cst.TrailingWhitespace(
+        #                   newline=cst.Newline(value='')))
+        func = cst.FunctionDef(
+            name=cst.Name(_rand(_codegen.code_for_node(updated_node.body))),
+            params=cst.Parameters(),
+            body=updated_node.body,
+        )
+        method_name = updated_node.items[0].item.func.attr.value.lower()
+        if "regex" in method_name:
+            # updated_node.items[0].item.func
+            assert_stmt = raises_regex_op(
+                updated_node.items[0].item.args[0],
+                updated_node.items[0].item.args[1],
+                cst.Arg(value=func.name),
             )
-        ]
-        # idx here starts at 0, so it is -1 from current pointer of targets
-        for idx, t in enumerate(assign_stmt.targets[1:]):
-            stmts.append(
+        else:
+            assert_stmt = raises_op(
+                updated_node.items[0].item.args[0], cst.Arg(value=func.name)
+            )
+        return cst.FlattenSentinel(
+            [
+                func,
                 cst.SimpleStatementLine(
-                    body=[
-                        cst.Assign(
-                            targets=[
-                                cst.AssignTarget(target=t.target),
-                            ],
-                            value=assign_stmt.targets[idx].target,
-                        ),
-                    ]
-                )
-            )
-        return cst.FlattenSentinel(stmts)
-
-
-class DesugarBuiltinOperators(codemod.ContextAwareTransformer):
-    """
-    - ** to pow
-    - X @ Y = operator.matmul(x,y)..
-    """
-
-    @m.call_if_inside(m.BinaryOperation(operator=m.Power()))
-    def leave_BinaryOperation(
-        self, original_node: "BinaryOperation", updated_node: "BinaryOperation"
-    ) -> "BaseExpression":
-        return cst.Call(
-            func=cst.Name(value="pow"),
-            args=[
-                cst.Arg(updated_node.left),
-                cst.Arg(updated_node.right),
-            ],
+                    body=[cst.Expr(value=assert_stmt)],
+                    leading_lines=updated_node.leading_lines,
+                ),
+            ]
         )
 
 
-class DesugarSetSyntax(codemod.ContextAwareTransformer):
-    @m.call_if_inside(m.Assign(value=m.Set(elements=m.DoNotCare())))
-    def leave_Assign(
-        self, original_node: "Assign", updated_node: "Assign"
-    ) -> Union[
-        "BaseSmallStatement",
-        FlattenSentinel["BaseSmallStatement"],
-        RemovalSentinel,
-    ]:
-        """
-        x = {1,2} => x = set([1,2])
-        """
-        return self.convert_set_expr_to_fn(original_node, updated_node)
+class DedentModule(codemod.ContextAwareTransformer):
+    def leave_Module(
+        self, original_node: "cst.Module", updated_node: "cst.Module"
+    ) -> "cst.Module":
 
-    @m.call_if_inside(m.Expr(value=m.Set(elements=m.DoNotCare())))
-    def leave_Expr(
-        self, original_node: "Expr", updated_node: "Expr"
-    ) -> Union[
-        "BaseSmallStatement",
-        FlattenSentinel["BaseSmallStatement"],
-        RemovalSentinel,
-    ]:
-        """
-        {1,2} => set([1,2])
-        """
-        return self.convert_set_expr_to_fn(original_node, updated_node)
+        module_body = []
+        for classdef in updated_node.body:
+            indentedbody = typing.cast(cst.IndentedBlock, classdef.body)
+            module_body.extend([*indentedbody.body])
+            # module_body.append(deindented_body)
 
-    def convert_set_expr_to_fn(
-        self,
-        original_node: Union["Assign", "Expr"],
-        updated_node: Union["Assign", "Expr"],
-    ) -> Union[
-        "BaseSmallStatement",
-        FlattenSentinel["BaseSmallStatement"],
-        RemovalSentinel,
+        return updated_node.with_changes(body=module_body)
+
+
+class Unittest2Functions(codemod.ContextAwareTransformer):
+    def __init__(self, context: CodemodContext, class_name=None):
+        super(Unittest2Functions, self).__init__(context)
+        self.class_name = class_name
+
+    def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
+        self.class_name = node.name.value
+        return True
+
+    # def leave_ClassDef(
+    #     self, original_node: "cst.ClassDef", updated_node: "cst.ClassDef"
+    # ) -> typing.Union[
+    #     "cst.BaseStatement",
+    #     cst.FlattenSentinel["cst.BaseStatement"],
+    #     cst.RemovalSentinel,
+    # ]:
+    #     rewriter = ClassToFunctionRewriter(
+    #         self.context, namespace_defs=True, remove_decorators=True
+    #     )
+    #     return updated_node.visit(rewriter)
+
+    def leave_FunctionDef(
+        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
+    ) -> typing.Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel[cst.BaseStatement],
+        cst.RemovalSentinel,
     ]:
-        AddImportsVisitor.add_needed_import(self.context, "sets", "Set")
-        return updated_node.with_changes(
-            value=cst.Call(
-                func=cst.Name(value="Set"),
-                args=[
-                    cst.Arg(
-                        value=cst.List(elements=updated_node.value.elements)
-                    )
-                ],
-            )
+        un = updated_node.visit(
+            FunctionParameterStripper(self.context, ["self"])
         )
+        un = un.visit(UndecorateClassMethods(self.context))
+        un = un.visit(PrefixMethodByClsName(self.context, self.class_name))
+        return un
 
-
-class RemoveExceptions(codemod.ContextAwareTransformer):
-    def __init__(self, context=None):
-        context = context if context else CodemodContext()
-        super(RemoveExceptions, self).__init__(context)
-
-    DESCRIPTION = "Removes exceptions."
-    METADATA_DEPENDENCIES = (ParentNodeProvider,)
-
-    def leave_Try(
-        self, original_node: "Try", updated_node: "Try"
-    ) -> Union[
-        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
-    ]:
-        # TODO: check to see https://github.com/MaT1g3R/option/issues/7
-        # need to come to an agreement on how this will work.
-        return updated_node
-
-    @m.call_if_inside(m.Raise(exc=m.Call()))
-    def leave_Raise(
-        self, original_node: "Raise", updated_node: "Raise"
-    ) -> Union[
-        "BaseSmallStatement",
-        FlattenSentinel["BaseSmallStatement"],
-        RemovalSentinel,
-    ]:
-        exc_name = ensure_type(updated_node.exc, cst.Call)
-        args2 = []
-        for a in exc_name.args:
-            if isinstance(a.value, cst.BinaryOperation):
-                newval = cst.parse_expression(
-                    f'"{exc_name.func.value}: {a.value.left.raw_value}"'
-                )
-                args2.append(
-                    a.with_changes(value=a.value.with_changes(left=newval))
-                )
-                # args2.append(
-                #     a.with_changes(
-                #         value=a.value.with_changes(
-                #             left=cst.SimpleString(
-                #                 value=f'"{exc_name.func.value}: {a.value.left.raw_value}"'
-                #             )
-                #         )
-                #     )
-                # )
-            elif isinstance(a.value, cst.SimpleString):
-                args2.append(
-                    a.with_changes(
-                        value=cst.SimpleString(
-                            value=f'"{exc_name.func.value}: {a.value.raw_value}"'
-                        )
-                    )
-                )
-
-        rval = cst.Call(func=cst.Name(value=f"Error"), args=args2)
-        AddImportsVisitor.add_needed_import(
-            self.context, "option.result", "Error"
-        )
-        upd = cst.Return(value=rval)
-        return cst.FlattenSentinel([upd])
-
-        # return Result.Error("JWKError: " + args)
-
-        # return updated_node.with_changes(
-        #     body=[
-        #         cst.Call(
-        #
-        #         )
-        #     ]
-        # )
+    def leave_Module(
+        self, original_node: "cst.Module", updated_node: "cst.Module"
+    ) -> "cst.Module":
+        print("Got here!")
+        dedenter = DedentModule(self.context)
+        updated_node.visit(dedenter)
