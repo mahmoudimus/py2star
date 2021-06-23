@@ -205,6 +205,9 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
     @m.leave(m.Call(func=m.Attribute(value=m.DoNotCare(), attr=m.DoNotCare())))
     def rewrite_encode_decode(self, on: "Call", un: "Call") -> "BaseExpression":
         AddImportsVisitor.add_needed_import(self.context, "codecs")
+        encoding = cst.SimpleString(value='"utf-8"')
+        if un.args:
+            encoding = un.args[0].value
         expr = cst.Call(
             func=cst.Attribute(
                 value=cst.Name(
@@ -215,7 +218,7 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
             args=[
                 cst.Arg(value=un.func.value),
                 cst.Arg(
-                    value=un.args[0].value,
+                    value=encoding,
                     keyword=cst.Name("encoding"),
                     equal=cst.AssignEqual(
                         whitespace_before=cst.SimpleWhitespace(""),
