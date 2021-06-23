@@ -31,28 +31,6 @@
 - [ ] with statements
 - [ ] `yield from` => `return`  
 
-- [ ] Fix the bug with init..there's definitely *some* bug 
-```python
-class QName:
-    def __init__(self, text_or_uri, tag=None):
-        if tag:
-            text_or_uri = "{%s}%s" % (text_or_uri, tag)
-        self.text = text_or_uri
-```
-to
-
-```python
-def QName(text_or_uri, tag=None):
-    self = larky.mutablestruct(__class__='QName')
-
-    def __init__(text_or_uri, tag):
-        if tag:
-            text_or_uri = "{%s}%s" % (text_or_uri, tag)
-        # where did self.text assignment go?
-        # where did return self. go? 
-    self = __init__(text_or_uri, tag)
-```
-
 - [ ] 
 ```python
 def do(namespace): 
@@ -69,7 +47,7 @@ def do(namespace):
 - [ ] `events[:index] = []` == `for i in range(index): events.pop(0)` 
 
     
-- [] decode()/encode() should be translated to codecs.encode()/codecs.decode()
+- [x] decode()/encode() should be translated to codecs.encode()/codecs.decode()
 - [] `self.__class__` => `__init__()` or `function()...`
 - [] migrate this:
 ```python
@@ -115,7 +93,7 @@ def foo(target):
         del target
 ```
 
-- [ ] implicit string concatanation..
+- [x] implicit string concatanation..
 
 ## bug fixes
 
@@ -127,7 +105,7 @@ def foo(target):
   - [x] test string formatting cases as well
     
 - [ ] ~~fail("TypeError(\"xxxxxx\")") => fail("TypeError: xxxxxx")~~
-  - [x] with introduction of `Error` `Ok` object, we no longer need to fail()
+- [x] with introduction of `Error` `Ok` object, we no longer need to fail()
 
 ### operators
 
@@ -144,17 +122,18 @@ def foo(target):
 
 ### misc:
 
-- remove if __name__ == '__main__'..
+- [x] remove if __name__ == '__main__'..
 
--  if methods are referenced in the class, then they should be ordered so that 
+- [ ] if methods are referenced in the class, then they should be ordered so that 
    they are defined first before invoking them in init? test this!
    
 
 ## TODO
 
-- integrate lib3to6 / python-future?
-  - pybackwards has issues (astunparse)
-  - [ ] 
+- [x] integrate lib3to6
+- [ ] python-future?
+- ~~pybackwards has issues (astunparse)~~
+
 ```python
 attr_value = elem.get(key)
 if attr_value != None and attr_value != value:
@@ -166,8 +145,8 @@ More transform desugaring ideas here:
 - [pythran](https://github.com/serge-sans-paille/pythran/tree/master/pythran/transformations)
 - [typy](https://github.com/Procrat/typy/blob/master/typy/insuline.py)
   
-- Rewrite lib2to3 fixers to libcst
- - Particularly the test generation stuff should be easy to port tests
+- [x] Rewrite lib2to3 fixers to libcst
+  - [x] Particularly the test generation stuff should be easy to port tests
 
 ## Ideas
 

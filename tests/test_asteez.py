@@ -298,9 +298,8 @@ class TestDesugarSetSyntax(CodemodTest):
         self.assertCodemod(before, after)
 
 
-@unittest.skip("NEED TO IMPLEMENT")
-class TestRewriteEncodeAndDecodeToCodecs(MetadataResolvingCodemodTest):
-    TRANSFORM = None
+class TestSubMethodsWithLibraryCallsInstead(MetadataResolvingCodemodTest):
+    TRANSFORM = remove_exceptions.SubMethodsWithLibraryCallsInstead
 
     def test_convert_dotencode_to_codecsdotencode(self):
         before = """
@@ -314,10 +313,33 @@ class TestRewriteEncodeAndDecodeToCodecs(MetadataResolvingCodemodTest):
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
 
+    def test_convert_dotdecode_to_codecsdotdecode(self):
+        before = """
+        long_to_base64(self.prepared_key.n).decode('ASCII'),
+        """
 
-@unittest.skip("NEED TO IMPLEMENT")
+        after = """
+        codecs.decode(long_to_base64(self.prepared_key.n), encoding='ASCII'),
+        """
+
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+    def test_convert_hex_to_hexlify(self):
+        before = """
+        b"foo".hex()
+        """
+
+        after = """
+        codecs.decode(binascii.hexlify(b"foo"), encoding='utf-8')
+        """
+
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+
 class TestRewriteImplicitStringConcat(MetadataResolvingCodemodTest):
-    TRANSFORM = None
+    TRANSFORM = remove_exceptions.RewriteImplicitStringConcat
 
     def test_convert_implicit_string_concat(self):
         before = """
@@ -327,7 +349,7 @@ class TestRewriteImplicitStringConcat(MetadataResolvingCodemodTest):
 
         after = """
         print("Attempting to verify a message with a private key. " +
-              "This is not recommended.")        
+              "This is not recommended.")
         """
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)

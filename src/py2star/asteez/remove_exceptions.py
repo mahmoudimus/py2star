@@ -4,8 +4,10 @@ import warnings
 
 import libcst as cst
 from libcst import (
+    BaseExpression,
     BaseSmallStatement,
     BaseStatement,
+    Call,
     FlattenSentinel,
     Raise,
     RemovalSentinel,
@@ -92,9 +94,102 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
 
     hex() => hexlify()
     etc etc
+
+    if not m.matches(
+        updated_node,
+        m.Call(
+            func=m.Attribute(
+                value=m.DoNotCare(),
+                attr=m.OneOf(
+                    m.Name(value="encode"), m.Name(value="decode")
+                ),
+            ),
+            args=m.DoNotCare(),
+        ),
+    ):
+        return updated_node
     """
 
-    pass
+    @m.call_if_inside(
+        m.Call(
+            func=m.Attribute(
+                value=m.DoNotCare(),
+                attr=m.OneOf(m.Name(value="encode"), m.Name(value="decode")),
+            ),
+            args=m.DoNotCare(),
+        )
+    )
+    @m.leave(m.Call(func=m.Attribute(value=m.DoNotCare(), attr=m.DoNotCare())))
+    def rewrite_encode_decode(self, on: "Call", un: "Call") -> "BaseExpression":
+        AddImportsVisitor.add_needed_import(self.context, "codecs")
+        expr = cst.Call(
+            func=cst.Attribute(
+                value=cst.Name(
+                    value="codecs",
+                ),
+                attr=un.func.attr,
+            ),
+            args=[
+                cst.Arg(value=un.func.value),
+                cst.Arg(
+                    value=un.args[0].value,
+                    keyword=cst.Name("encoding"),
+                    equal=cst.AssignEqual(
+                        whitespace_before=cst.SimpleWhitespace(""),
+                        whitespace_after=cst.SimpleWhitespace(""),
+                    ),
+                ),
+            ],
+        )
+        return un.deep_replace(un, expr)
+
+    @m.call_if_inside(
+        m.Call(
+            func=m.Attribute(
+                value=m.DoNotCare(),
+                attr=m.Name("hex"),
+            ),
+            args=[],
+        )
+    )
+    @m.leave(m.Call(func=m.Attribute(value=m.DoNotCare(), attr=m.Name("hex"))))
+    def rewrite_hex_to_hexlify(
+        self, on: "Call", un: "Call"
+    ) -> "BaseExpression":
+        AddImportsVisitor.add_needed_import(self.context, "codecs")
+        AddImportsVisitor.add_needed_import(self.context, "binascii")
+        return un.deep_replace(
+            un,
+            cst.parse_expression(
+                f"codecs.decode(binascii.hexlify({un.func.value.value}), encoding='utf-8')"
+            ),
+        )
+
+
+class RewriteImplicitStringConcat(codemod.ContextAwareTransformer):
+    """
+    a = (" "
+         " ")
+    ==>
+    a = (" " +
+    " ")
+    """
+
+    def leave_ConcatenatedString(
+        self, original: "ConcatenatedString", updated: "ConcatenatedString"
+    ) -> "BaseExpression":
+        left = updated.left
+        right = updated.right
+        ws_between = updated.whitespace_between
+
+        return updated.deep_replace(
+            updated,
+            cst.BinaryOperation(
+                left=left,
+                operator=cst.Add(whitespace_after=ws_between),
+                right=right,
+            ),
+        )
 
 
 class UnpackTargetAssignments(codemod.ContextAwareTransformer):
