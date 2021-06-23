@@ -58,7 +58,8 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         cst.FlattenSentinel[cst.BaseStatement],
         cst.RemovalSentinel,
     ]:
-
+        if not self.class_name:
+            return updated_node
         # remove self from all functions
         # (IMPORTANT! Run self stripper FIRST to set functions w/o self so
         #  rewriting can use selfless parameters when manually setting
@@ -289,7 +290,9 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         #     params, params.with_changes(star_arg=cst.MaybeSentinel.DEFAULT)
         # )
         body = self.append_return_self_to_body(updated_node)
-        self.parent_class = updated_node.deep_replace(
+        # must clear out the parent class for future runs
+        self.parent_class = None
+        return updated_node.deep_replace(
             updated_node,
             cst.FunctionDef(
                 name=updated_node.name,
@@ -297,7 +300,6 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                 body=body,
             ),
         )
-        return self.parent_class
 
     @staticmethod
     def append_return_self_to_body(updated_node):

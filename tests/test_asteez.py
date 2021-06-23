@@ -713,6 +713,22 @@ class TestAssertStatementRewriter(MetadataResolvingCodemodTest):
         self.assertCodemod(before, after, context_override=ctx)
 
 
+class TestSwapByteLiteralPrefix(MetadataResolvingCodemodTest):
+
+    TRANSFORM = remove_exceptions.SwapByteStringPrefixes
+
+    def test_simple(self):
+        before = """
+        p = re.compile(br'\$2a\$([0-9][0-9])\$([A-Za-z0-9./]{22,22})([A-Za-z0-9./]{31,31})')
+        """
+
+        after = """
+        p = re.compile(rb'\$2a\$([0-9][0-9])\$([A-Za-z0-9./]{22,22})([A-Za-z0-9./]{31,31})')
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+
 class TestRewriteImporting(MetadataResolvingCodemodTest):
 
     TRANSFORM = rewrite_imports.RewriteImports

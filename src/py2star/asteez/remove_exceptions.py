@@ -160,6 +160,16 @@ class AssertStatementRewriter(codemod.ContextAwareTransformer):
         return updated_node.deep_replace(updated_node, if_stmt)
 
 
+class SwapByteStringPrefixes(codemod.ContextAwareTransformer):
+    @m.call_if_inside(m.SimpleString(value=m.MatchRegex(r"""^br["'].+?""")))
+    def leave_SimpleString(
+        self, original_node: "SimpleString", updated_node: "SimpleString"
+    ) -> "BaseExpression":
+        return updated_node.with_changes(
+            value=updated_node.value.replace("br", "rb", 1)
+        )
+
+
 class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
     """
     str.decode(xxxx) => codecs.decode(xxxx)

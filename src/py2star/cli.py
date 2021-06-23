@@ -197,6 +197,7 @@ def larkify(filename, args):
     )
     transformers = [
         remove_exceptions.RewriteImplicitStringConcat(context),
+        remove_exceptions.SwapByteStringPrefixes(context),
         remove_exceptions.SubMethodsWithLibraryCallsInstead(context),
         remove_exceptions.UnpackTargetAssignments(context),
         remove_exceptions.DesugarDecorators(context),
