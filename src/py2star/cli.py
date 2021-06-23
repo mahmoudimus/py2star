@@ -196,13 +196,13 @@ def larkify(filename, args):
         full_module_name=_full_module_name(args.pkg_path, filename),
     )
     transformers = [
-        remove_exceptions.CommentTopLevelTryBlocks(context),
-        remove_exceptions.DesugarDecorators(context),
         remove_exceptions.RewriteImplicitStringConcat(context),
         remove_exceptions.SubMethodsWithLibraryCallsInstead(context),
         remove_exceptions.UnpackTargetAssignments(context),
+        remove_exceptions.DesugarDecorators(context),
         remove_exceptions.DesugarBuiltinOperators(context),
         remove_exceptions.DesugarSetSyntax(context),
+        remove_exceptions.CommentTopLevelTryBlocks(context),
         rewrite_imports.RemoveDelKeyword(context),
         rewrite_loopz.WhileToForLoop(context),
         functionz.RewriteTypeChecks(context),

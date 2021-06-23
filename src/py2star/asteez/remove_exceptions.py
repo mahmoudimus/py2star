@@ -207,7 +207,8 @@ class UnpackTargetAssignments(codemod.ContextAwareTransformer):
             body=[
                 m.Assign(
                     targets=[m.AtLeastN(n=2, matcher=m.AssignTarget())],
-                    value=m.OneOf(m.SimpleString(), m.Name()),
+                    value=m.DoNotCare(),
+                    # value=m.OneOf(m.SimpleString(), m.Name()),
                 )
             ]
         )

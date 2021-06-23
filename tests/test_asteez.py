@@ -200,6 +200,25 @@ class TestUnpackTargetAssignments(CodemodTest):
         """
         self.assertCodemod(before, after)
 
+    def test_unpack_expression(self):
+        before = r"""
+        class _S2V(object):
+            def __init__(self, key, ciphermod, cipher_params=None):
+                self._key = _copy_bytes(None, None, key)
+                self._ciphermod = ciphermod
+                self._last_string = self._cache = b'\x00' * ciphermod.block_size
+        """
+
+        after = r"""
+        class _S2V(object):
+            def __init__(self, key, ciphermod, cipher_params=None):
+                self._key = _copy_bytes(None, None, key)
+                self._ciphermod = ciphermod
+                self._last_string = b'\x00' * ciphermod.block_size
+                self._cache = self._last_string
+        """
+        self.assertCodemod(before, after)
+
 
 class TestDesugarDecorators(CodemodTest):
     TRANSFORM = remove_exceptions.DesugarDecorators
