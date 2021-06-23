@@ -20,6 +20,7 @@ class FixBytestring(fixer_base.BaseFix):
     order = "pre"
     run_order = 1
     BM_compatible = True
+    explicit = True
     PATTERN = "STRING"
 
     def transform(self, node: pytree.Node, results: typing.Dict):

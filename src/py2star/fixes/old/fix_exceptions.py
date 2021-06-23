@@ -22,7 +22,7 @@ class FixExceptions(fixer_base.BaseFix):
     order = "pre"
     run_order = 1  # Fixers will be sorted by run order before execution
     # Lower numbers will be run first.
-
+    explicit = True
     BM_compatible = True
     PATTERN = """
     raise_stmt< 'raise' exc=any [',' val=any [',' tb=any]] >

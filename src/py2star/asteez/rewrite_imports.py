@@ -1,21 +1,31 @@
+import dataclasses
 import logging
+import operator
+import sys
+import typing
 from collections import defaultdict
 from typing import Dict, Sequence, Set, Union, cast
 
-import ipdb
 import libcst as cst
 import libcst.codemod
 import libcst.matchers as m
 from importanize import utils as importutils
-from libcst.metadata.scope_provider import QualifiedNameSource
 
 # from libcst.codemod.visitors import AddImportsVisitor
+from libcst import (
+    BaseSmallStatement,
+    Call,
+    FlattenSentinel,
+    RemovalSentinel,
+    codemod,
+)
 from libcst.codemod import CodemodContext
+from libcst.codemod.visitors import AddImportsVisitor
 from libcst.helpers import get_full_name_for_node
 from libcst.metadata import (
-    QualifiedNameProvider,
     FullyQualifiedNameProvider,
     ParentNodeProvider,
+    QualifiedNameProvider,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,10 +125,9 @@ class RemoveUnusedImports(cst.CSTTransformer):
 # https://github.com/Instagram/LibCST/blob/master/libcst/codemod/commands/rename.py
 # https://github.com/hakancelik96/unimport/blob/master/unimport/refactor.py
 # https://github.com/InvestmentSystems/pydelinter/blob/master/src/delinter/imports.py
-class RewriteImports(cst.codemod.VisitorBasedCodemodCommand):
+class RewriteImports(codemod.ContextAwareTransformer):
     METADATA_DEPENDENCIES = (
         QualifiedNameProvider,
-        FullyQualifiedNameProvider,
         ParentNodeProvider,
     )
     FUTURE_IMPORT = "__future__"
@@ -177,6 +186,8 @@ class RewriteImports(cst.codemod.VisitorBasedCodemodCommand):
 
         # /Users/mahmoud/src/unsorted/gelgel/python-jose/jose-larky/jwe.star
         # jose/backends/rsa_backend.py
+        # https://github.com/MarcoGorelli/absolufy-imports
+        # https://github.com/asottile/pyupgrade
         mod_name = None
         if type(updated_node) == cst.ImportFrom:
             mod_name = self._on_import_from(updated_node)
@@ -219,96 +230,49 @@ class RewriteImports(cst.codemod.VisitorBasedCodemodCommand):
 
     def _on_import_from(self, updated_node):
         module_attr = updated_node.module
+        relative_imports = len(updated_node.relative)
+        mod_name = ""
         if module_attr:
             mod_name = get_full_name_for_node(module_attr)
-            return mod_name
+            if relative_imports == 0:
+                return mod_name
 
-        # mod_name = get_full_name_for_node(updated_node.module)
-        name = self.get_metadata(FullyQualifiedNameProvider, self.module).pop()
-        name_root, _, name_rest = name.name.partition(".")
-
-        assert updated_node.relative  # and module_attr
-        return f"{name_root}.{updated_node.names[0].name.value}"
-        # return f"{name_root}.{}"
-        # ImportFrom(
-        #     module=None,
-        #     names=[
-        #         ImportAlias(
-        #             name=Name(
-        #                 value='jwk',
-        #                 lpar=[],
-        #                 rpar=[],
-        #             ),
-        #             asname=None,
-        #             comma=MaybeSentinel.DEFAULT,
-        #         ),
-        #     ],
-        #     relative=[
-        #         Dot(
-        #             whitespace_before=SimpleWhitespace(
-        #                 value='',
-        #             ),
-        #             whitespace_after=SimpleWhitespace(
-        #                 value='',
-        #             ),
-        #         ),
-        #     ],
-
-        # import_names = updated_node.names
-        # for name in import_names:
-        #     real_name = get_full_name_for_node(name.name)
-        #     if not real_name:
-        #         continue
-        #     # real_name can contain `.` for dotted imports
-        #     # for these we want to find the longest prefix that matches
-        #     # full_name
-        #     parts = real_name.split(".")
-        #     real_names = [".".join(parts[:i]) for i in range(len(parts), 0, -1)]
-        #     for real_name in real_names:
-        #         as_name = real_name
-        #         if module_attr:
-        #             real_name = f"{module_attr}.{real_name}"
-        #         if name and name.asname:
-        #             eval_alias = name.evaluated_alias
-        #             if eval_alias is not None:
-        #                 as_name = eval_alias
-
-        # if full_name.startswith(as_name):
-        #     remaining_name = full_name.split(as_name, 1)[1].lstrip(".")
-        #     results.add(
-        #         QualifiedName(
-        #             f"{real_name}.{remaining_name}"
-        #             if remaining_name
-        #             else real_name,
-        #             QualifiedNameSource.IMPORT,
-        #         )
+        # we are a relative import!
+        if self.context.full_module_name is None and mod_name:
+            print(
+                "attempting to rewrite relative import",
+                mod_name,
+                "with an unknown module name! trans-compilation will need to "
+                "be run with -p command because root mod name is ambiguous..",
+                file=sys.stderr,
+            )
+            name_root = ""
+        else:
+            # split the full module name to find out where we are
+            paths = self.context.full_module_name.split(".")
+            paths.reverse()
+            # based on how many relative dots, we will make this an
+            # absolute qualifier
+            # ... jose.backends.pycrypto_backend
+            # ... [pycrypto_backend, backends, jose]
+            # ... [[pycrypto_backend, backends, jose][len(dots)]
+            # ... from .base import Key => jose.backends.base
+            # ... from ..utils import Y => jose.utils.Y
+            name_root = ".".join(reversed(paths[relative_imports:]))
+        # if len(updated_node.names) != 1:
+        #     print(
+        #         "updated_node.names != 1, will just pick first one",
+        #         file=sys.stderr,
         #     )
-        #
-        # ImportFrom(
-        #     module=None,
-        #     names=[
-        #         ImportAlias(
-        #             name=Name(
-        #                 value='jwk',
-        #                 lpar=[],
-        #                 rpar=[],
-        #             ),
-        #             asname=None,
-        #             comma=MaybeSentinel.DEFAULT,
-        #         ),
-        #     ],
-        #     relative=[
-        #         Dot(
-        #             whitespace_before=SimpleWhitespace(
-        #                 value='',
-        #             ),
-        #             whitespace_after=SimpleWhitespace(
-        #                 value='',
-        #             ),
-        #         ),
-        #     ],
-        #
-        return mod_name
+        if mod_name:
+            if name_root.endswith(".") and mod_name.startswith("."):
+                name_root = name_root[:-1]
+            elif not name_root.endswith(".") and not mod_name.startswith("."):
+                name_root = name_root + "."
+        else:
+            if name_root.endswith("."):
+                name_root = name_root[:-1]
+        return f"{name_root}{mod_name}"
 
     @staticmethod
     def _compile_to_larky_load(args, updated_node):
@@ -360,3 +324,166 @@ class RewriteImports(cst.codemod.VisitorBasedCodemodCommand):
     #     if m.matches(updated_node, m.Call(func=m.Name("load"))):
     #         return self.leave_import_alike(original_node, updated_node)
     #     return updated_node
+
+
+class RemoveDelKeyword(codemod.ContextAwareTransformer):
+    METADATA_DEPENDENCIES = (
+        cst.metadata.ParentNodeProvider,
+        cst.metadata.ScopeProvider,
+        cst.metadata.PositionProvider,
+    )
+
+    def __init__(self, context: CodemodContext) -> None:
+        super().__init__(context)
+        self.names = []
+
+    @m.call_if_inside(m.SimpleStatementLine(body=[m.Del(target=m.DoNotCare())]))
+    def leave_SimpleStatementLine(
+        self,
+        original_node: "SimpleStatementLine",
+        updated_node: "SimpleStatementLine",
+    ) -> Union[
+        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
+    ]:
+        # del self.xxxx
+        _attr = m.Del(
+            target=m.Tuple(
+                elements=[
+                    m.AtLeastN(
+                        n=1,
+                        matcher=m.Element(
+                            value=m.Attribute(value=m.DoNotCare())
+                        ),
+                    )
+                ]
+            )
+        )
+        if updated_node.body and m.matches(updated_node.body[0], _attr):
+            commented = "# del " + "".join(
+                self.module.code_for_node(t)
+                for t in updated_node.body[0].target.elements
+            )
+            un = updated_node.with_changes(
+                body=[cst.Pass()],
+                leading_lines=[
+                    *updated_node.leading_lines,
+                    cst.EmptyLine(comment=cst.Comment(value=commented)),
+                ],
+            )
+            return un
+        # del a[b]
+        _delitem = m.Del(
+            target=m.Subscript(
+                value=m.OneOf(
+                    m.Name(value=m.DoNotCare()),
+                    m.Attribute(value=m.DoNotCare()),
+                )
+            )
+        )
+        if m.matches(updated_node.body[0], _delitem):
+            # operator.delitem(a, b, /)
+            # Same as del a[b].
+            AddImportsVisitor.add_needed_import(self.context, "operator")
+            un = updated_node.deep_replace(
+                updated_node,
+                cst.helpers.parse_template_statement(
+                    # "operator.delitem({value}.{attr}, {slice})",
+                    "operator.delitem({value}, {slice})",
+                    config=self.module.config_for_parsing,
+                    value=updated_node.body[0].target.value,
+                    # attr=updated_node.target.value.attr,
+                    slice=updated_node.body[0].target.slice[0].slice.value,
+                ),
+            )
+            return un
+        return updated_node
+
+
+class LarkyImportSorter(codemod.ContextAwareTransformer):
+    METADATA_DEPENDENCIES = (
+        cst.metadata.ScopeProvider,
+        cst.metadata.PositionProvider,
+    )
+
+    def __init__(self, context: CodemodContext) -> None:
+        super().__init__(context)
+        self.names = []
+
+    def process_node(
+        self,
+        node: Union[
+            cst.FunctionDef, cst.ClassDef, cst.BaseAssignTargetExpression
+        ],
+        name: str,
+    ) -> None:
+        scope = self.get_metadata(cst.metadata.ScopeProvider, node)
+        if not isinstance(scope, cst.metadata.GlobalScope):
+            return
+        # we are in global scope
+        if not name.startswith("_"):
+            self.names.append(name)
+
+    @m.call_if_inside(m.Call(func=m.Name(value="load")))
+    def visit_Call(self, node: "Call") -> typing.Optional[bool]:
+        self.names.append((node.args[0].value, node))
+        return True
+
+    @m.call_if_inside(m.Expr(value=m.Call(func=m.Name(value="load"))))
+    def leave_Expr(
+        self, original_node: "Expr", updated_node: "Expr"
+    ) -> Union[
+        "BaseSmallStatement",
+        FlattenSentinel["BaseSmallStatement"],
+        RemovalSentinel,
+    ]:
+        # must be top level scope!
+        scope = self.get_metadata(cst.metadata.ScopeProvider, original_node)
+        if not isinstance(scope, cst.metadata.GlobalScope):
+            return updated_node
+        return cst.RemoveFromParent()
+
+    def leave_Module(
+        self, original_node: libcst.Module, updated_node: libcst.Module
+    ) -> libcst.Module:
+        body = []
+        if not updated_node.body:
+            return updated_node
+        i = 0
+        statement = None
+        for _i, _statement in enumerate(updated_node.body):
+            i = _i
+            statement = _statement
+            # keep going until we hit a search
+            if m.matches(
+                statement,
+                m.SimpleStatementLine(body=[m.Expr(value=m.SimpleString())]),
+            ):
+                body.append(statement)
+            else:
+                body.extend(
+                    cst.SimpleStatementLine(body=[cst.Expr(value=y)])
+                    # sort imports in lexicographic order
+                    for x, y in sorted(self.names, key=lambda x: x[0].value)
+                )
+                break
+
+        # check for leading lines (empty lines or comments) before
+        # the next item in the body and move it above
+        first_item = body[-len(self.names)]
+        # copy the leading lines from the next statement
+        # and put it on the last body item
+        if (
+            m.matches(statement, m.SimpleStatementLine())
+            and statement.leading_lines
+        ):
+            first_item = first_item.with_changes(
+                leading_lines=statement.leading_lines
+            )
+            statement = statement.with_changes(leading_lines=[cst.EmptyLine()])
+            body[-len(self.names)] = first_item
+        body.append(statement)
+
+        if i + 1 < len(updated_node.body):
+            body.extend(updated_node.body[i + 1 :])
+
+        return updated_node.with_changes(body=body)

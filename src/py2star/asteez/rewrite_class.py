@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import typing
 
 import libcst as cst
@@ -8,7 +9,7 @@ from libcst.codemod import CodemodContext
 
 
 # class ClassToFunctionRewriter(cst.CSTTransformer):
-class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
+class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
 
     DESCRIPTION = "Rewrites classes to functions"
 
@@ -56,10 +57,10 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
         # (IMPORTANT! Run self stripper FIRST to set functions w/o self so
         #  rewriting can use selfless parameters when manually setting
         #  functions).
-        stripper = FunctionParameterStripper(CodemodContext(), ["self"])
+        stripper = FunctionParameterStripper(self.context, ["self"])
         updated_node = updated_node.visit(stripper)
+        updated_node = updated_node.visit(UndecorateClassMethods(self.context))
 
-        decorators = self.undecorate_function(updated_node)
         # If there's an init, take its params to convert it
         # from:
         #
@@ -73,7 +74,6 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
         #     def __init__(foo, value):
         #         pass
         #
-        before = None
         if updated_node.name.value == "__init__":
             # init is a special case
             # TODO: __new__ and metaclasses? not supported for now.
@@ -84,33 +84,28 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
                 updated_node,
                 self_func_assign,
             ) = self._emulate_class_construction(updated_node, self.class_name)
+            prefixer = PrefixMethodByClsName(
+                self.context, self.class_name, excluded_methods=("__init__",)
+            )
+            updated_node = updated_node.visit(prefixer)
         else:
             params = updated_node.params
             before, self_func_assign = self._assign_func_to_self(updated_node)
+            if self.namespace_defs:
+                prefixer = PrefixMethodByClsName(self.context, self.class_name)
+                updated_node = updated_node.visit(prefixer)
 
-        results = [before] if before else []
-        results.append(
-            updated_node.with_changes(
-                name=self._namespace_function_name(updated_node),
-                params=params,
-                decorators=decorators,
-            )
+        results: typing.List[typing.Any] = [before] if before else []
+
+        n = updated_node.with_changes(
+            # name=self._namespace_function_name(updated_node),
+            params=params,
         )
+        results.append(n)
         if self.class_name:
-            # results.append(cst.SimpleStatementLine(body=[self_func_assign]))
             results.append(self_func_assign)
 
         return cst.FlattenSentinel(results)
-
-    def undecorate_function(self, updated_node):
-        if not self.remove_decorators:
-            return updated_node.decorators
-
-        decorators = []
-        for dec in updated_node.decorators:
-            if dec.decorator.value in ["staticmethod", "classmethod"]:
-                continue
-        return decorators
 
     @staticmethod
     def _assign_func_to_self(updated_node: cst.FunctionDef):
@@ -153,7 +148,14 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
     def _emulate_class_construction(updated_node: cst.FunctionDef, class_name):
         func_name = updated_node.name.value
         args = []
-        for p in updated_node.params.params:
+        for p in itertools.chain(
+            updated_node.params.params,
+            updated_node.params.posonly_params,
+            updated_node.params.kwonly_params,
+            (updated_node.params.star_kwarg,),
+        ):
+            if not p:
+                continue
             args.append(cst.Arg(value=p.name))
         # self = larky.mutablestruct(__class__='xxxx')
         before = cst.SimpleStatementLine(
@@ -195,9 +197,10 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
         )
         # def __init__():
         #     return self  <-- insert this.
-        body: cst.IndentedBlock = updated_node.body.with_changes(
+        body: cst.BaseSuite = updated_node.body
+        body = body.with_changes(
             body=[
-                updated_node.body.body[0],
+                *updated_node.body.body,
                 cst.SimpleStatementLine(
                     body=[cst.Return(value=cst.Name(value="self"))]
                 ),
@@ -223,26 +226,26 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
             cst.SimpleStatementLine(body=[self_func_assign]),
         )
 
-    def _namespace_function_name(self, node):
-        """
-        Rewrite function name to be namespaced with the classname, if
-        namespace_defs flag is turned on.
-
-            class Foo(object):
-               def __init__(self):
-                   pass
-
-        becomes:
-
-            class Foo(object):
-               def Foo__init__(self):
-                   pass
-        :param node:
-        :return:
-        """
-        if self.namespace_defs:
-            return cst.Name(f"{self.class_name}_{node.name.value}")
-        return node.name
+    # def _namespace_function_name(self, node):
+    #     """
+    #     Rewrite function name to be namespaced with the classname, if
+    #     namespace_defs flag is turned on.
+    #
+    #         class Foo(object):
+    #            def __init__(self):
+    #                pass
+    #
+    #     becomes:
+    #
+    #         class Foo(object):
+    #            def Foo__init__(self):
+    #                pass
+    #     :param node:
+    #     :return:
+    #     """
+    #     if self.namespace_defs:
+    #         return cst.Name(f"{self.class_name}_{node.name.value}")
+    #     return node.name
 
     def leave_ClassDef(
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
@@ -258,7 +261,14 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
         #     if self.init_params
         #     else cst.Parameters()
         # )
-        params = self.init_params if self.init_params else cst.Parameters()
+        params = cst.Parameters()
+        if self.init_params:
+            params = self.init_params
+            # TODO (mahmoudimus): I have to fix this for the failing test
+            # params = params.with_changes(star_arg=None)
+        # params = params.deep_replace(
+        #     params, params.with_changes(star_arg=cst.MaybeSentinel.DEFAULT)
+        # )
         body = self.append_return_self_to_body(updated_node)
         self.class_name = None
         return updated_node.deep_replace(
@@ -294,15 +304,96 @@ class ClassToFunctionRewriter(codemod.VisitorBasedCodemodCommand):
     @staticmethod
     def _remove_default_values(params: cst.Parameters):
         updated = []
-        for p in params.params:
+        for p in itertools.chain(
+            params.params,
+            params.posonly_params,
+            params.kwonly_params,
+            (params.star_kwarg,),
+        ):
+            if not p:
+                continue
             # if there's a default value for a parameter, remove it.
             if p.default is not None and p.equal != cst.MaybeSentinel:
-                p = p.with_changes(default=None, equal=cst.MaybeSentinel)
+                p = p.with_deep_changes(
+                    p, default=None, equal=cst.MaybeSentinel
+                )
+            # __init__(x, y, **z)
+            if p.star is not None:
+                p = p.with_deep_changes(p, star=None)
             updated.append(p)
         return cst.Parameters(updated)
 
 
-class FunctionParameterStripper(codemod.VisitorBasedCodemodCommand):
+class PrefixMethodByClsName(codemod.ContextAwareTransformer):
+    """
+    Rewrite function name to be namespaced with the classname, if
+    namespace_defs flag is turned on.
+
+        class Foo(object):
+           def __init__(self):
+               pass
+
+    becomes:
+
+        class Foo(object):
+           def Foo__init__(self):
+               pass
+    """
+
+    def __init__(self, context, class_name, excluded_methods=None) -> None:
+        super(PrefixMethodByClsName, self).__init__(context)
+        self.class_name = class_name
+        self.excluded = excluded_methods if excluded_methods else ()
+
+    def leave_FunctionDef(
+        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
+    ) -> typing.Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel[cst.BaseStatement],
+        cst.RemovalSentinel,
+    ]:
+        if updated_node.name.value in self.excluded:
+            return updated_node
+        if not self.class_name:
+            return updated_node
+        return updated_node.with_changes(
+            name=cst.Name(f"{self.class_name}_{updated_node.name.value}"),
+        )
+
+
+class UndecorateClassMethods(codemod.ContextAwareTransformer):
+    def __init__(self, context, exclude_decorators=None, noop=False) -> None:
+        super(UndecorateClassMethods, self).__init__(context)
+        self.excluded = (
+            exclude_decorators
+            if exclude_decorators
+            else ["staticmethod", "classmethod"]
+        )
+        self.noop = noop
+
+    def leave_FunctionDef(
+        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
+    ) -> typing.Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel[cst.BaseStatement],
+        cst.RemovalSentinel,
+    ]:
+        return updated_node.with_changes(
+            decorators=self.undecorate_function(updated_node)
+        )
+
+    def undecorate_function(self, updated_node):
+        if self.noop:
+            return updated_node.decorators
+
+        decorators = []
+        for dec in updated_node.decorators:
+            if dec.decorator.value in self.excluded:
+                continue
+        return decorators
+
+
+class FunctionParameterStripper(codemod.ContextAwareTransformer):
     DESCRIPTION = "Strips configured params from function signatures"
 
     def __init__(self, context: CodemodContext, params: typing.List):
@@ -340,11 +431,11 @@ class FunctionParameterStripper(codemod.VisitorBasedCodemodCommand):
         return modified_params
 
 
-class AttributeGetter(codemod.VisitorBasedCodemodCommand):
+class ClassInstanceVariableRemover(codemod.ContextAwareTransformer):
     DESCRIPTION = "AttributeGetter(ctx, ['self']): self.foo() => foo()"
 
     def __init__(self, context: CodemodContext, namespace: typing.List):
-        super(AttributeGetter, self).__init__(context)
+        super(ClassInstanceVariableRemover, self).__init__(context)
         self.namespace = [m.Name(n) for n in namespace]
 
     def leave_Attribute(

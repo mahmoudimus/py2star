@@ -2,27 +2,26 @@ import argparse
 import ast
 import io
 import logging
-import os
+import re
 import sys
 import tokenize
 from lib2to3 import refactor
-from pathlib import Path
+from typing import Optional, Pattern
 
+import lib3to6 as three2six
 import libcst
+from lib3to6 import common as three2six_common
 from libcst.codemod import CodemodContext
-from libcst.metadata import (
-    FullyQualifiedNameProvider,
-    ParentNodeProvider,
-    QualifiedNameProvider,
-)
-
+from libcst.codemod.visitors import AddImportsVisitor, RemoveImportsVisitor
 from py2star.asteez import (
     functionz,
+    remove_exceptions,
     remove_types,
     rewrite_class,
     rewrite_comparisons,
     rewrite_imports,
     rewrite_loopz,
+    rewrite_tests,
 )
 from py2star.tokenizers import find_definitions
 from py2star.utils import ReIndenter
@@ -101,7 +100,39 @@ def _add_common(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
     return p
 
 
-def onfixes(filename, fixers, doprint=True):
+def detect_encoding(filename):
+    with open(filename, "rb") as f:
+        try:
+            encoding, _ = tokenize.detect_encoding(f.readline)
+        except SyntaxError as se:
+            logger.exception("%s: SyntaxError: %s", filename, se)
+            return
+    return encoding
+
+
+def fixup_indentation(fileobj):
+    # return f.read()
+    r = ReIndenter(fileobj)
+    r.run()  # ensure spaces vs tabs
+
+    with io.StringIO() as o:
+        o.writelines(r.after)
+        o.flush()
+        return o.getvalue()
+
+
+def safe_read(filename):
+    encoding = detect_encoding(filename)
+    try:
+        with open(filename, encoding=encoding) as f:
+            out = fixup_indentation(f)
+    except IOError as msg:
+        logger.exception("%s: I/O Error: %s", filename, msg)
+        raise msg
+    return out
+
+
+def onfixes(out, fixers, doprint=True):
     if not fixers:
         _fixers = refactor.get_fixers_from_package("py2star.fixes")
     else:
@@ -112,27 +143,7 @@ def onfixes(filename, fixers, doprint=True):
             if i.endswith(x)
         ]
 
-    # with open(filename, "r") as f:
-    #     out = f.read()
-    with open(filename, "rb") as f:
-        try:
-            encoding, _ = tokenize.detect_encoding(f.readline)
-        except SyntaxError as se:
-            logger.exception("%s: SyntaxError: %s", filename, se)
-            return
-    try:
-        with open(filename, encoding=encoding) as f:
-            r = ReIndenter(f)
-    except IOError as msg:
-        logger.exception("%s: I/O Error: %s", filename, msg)
-        return
-
-    r.run()  # ensure spaces vs tabs
-
-    with io.StringIO() as o:
-        o.writelines(r.after)
-        o.flush()
-        out = o.getvalue()
+    # out = _lib3to6(filename, out)
 
     for f in _fixers:
         logger.debug("running fixer: %s", f)
@@ -146,62 +157,119 @@ def onfixes(filename, fixers, doprint=True):
     return out
 
 
-def larkify(filename, args):
-    # TODO: dynamic
-    # asteez.get_ast_rewriters_from_package("py2star.asteez")
-    pkg_root = _package_path(args, filename)
-    fixers = args.fixers
-    out = onfixes(filename, fixers, doprint=False)
-    program = libcst.parse_module(out)
-    wrapper = libcst.MetadataWrapper(
-        program,
-        cache={
-            FullyQualifiedNameProvider: FullyQualifiedNameProvider.gen_cache(
-                Path(""), [pkg_root], None
-            ).get(pkg_root, "")
-        },
+def _lib3to6(filename, source_text, install_requires=None, mode="enabled"):
+    cfg = three2six.packaging.eval_build_config(
+        target_version="3.5",
+        install_requires=install_requires,
+        default_mode=mode,
     )
 
-    wrapper.resolve_many(rewrite_imports.RewriteImports.METADATA_DEPENDENCIES)
-    context = CodemodContext(wrapper=wrapper, filename=filename)
-    rewriter = rewrite_imports.RewriteImports(context)
-    rewritten = wrapper.visit(rewriter)
+    ctx = three2six_common.BuildContext(cfg, filename)
+    try:
+        fixed_source_text = three2six.transpile.transpile_module(
+            ctx, source_text
+        )
+    except three2six_common.CheckError as err:
+        loc = filename
+        if err.lineno >= 0:
+            loc += "@" + str(err.lineno)
 
+        err.args = (loc + " - " + err.args[0],) + err.args[1:]
+        raise
+
+    return fixed_source_text
+
+
+def larkify(filename, args):
+    # TODO: select larkifiers dynamically? maybe look into instagram/fixers?
+    fixers = args.fixers
+    out = safe_read(filename)
+    if fixers:
+        doprint = args.log_level.lower() == "debug"
+        out = onfixes(out, fixers, doprint=doprint)
+
+    program = libcst.parse_module(out)
+    wrapper = libcst.MetadataWrapper(program)
+    context = CodemodContext(
+        wrapper=wrapper,
+        filename=filename,
+        full_module_name=_full_module_name(args.pkg_path, filename),
+    )
     transformers = [
-        remove_types.RemoveTypesTransformer(context),
+        remove_exceptions.CommentTopLevelTryBlocks(context),
+        remove_exceptions.DesugarDecorators(context),
+        remove_exceptions.UnpackTargetAssignments(context),
+        remove_exceptions.DesugarBuiltinOperators(context),
+        remove_exceptions.DesugarSetSyntax(context),
+        rewrite_imports.RemoveDelKeyword(context),
         rewrite_loopz.WhileToForLoop(context),
         functionz.RewriteTypeChecks(context),
         functionz.GeneratorToFunction(context),
         rewrite_comparisons.UnchainComparison(context),
+        rewrite_comparisons.RemoveIfNameEqualsMain(context),
         rewrite_comparisons.IsComparisonTransformer(context),
+        remove_types.RemoveTypesTransformer(context),
+        remove_exceptions.RemoveExceptions(context),
     ]
+
     # must run last otherwise messes up all the other transformers above
     if args.for_tests:
+        # TODO: can this by dynamic so we don't pass this in?
         transformers += [
-            rewrite_class.FunctionParameterStripper(context, ["self"]),
-            rewrite_class.AttributeGetter(context, ["self"]),
+            rewrite_tests.AssertStatementRewriter(context),
+            rewrite_tests.Unittest2Functions(context),
         ]
     else:
         # we don't want class to function rewriter for tests since
-        # there's already a fixer for tests based on lib2to3
-        transformers.append(
+        # there's a special class rewriter for tests
+        transformers += [
             rewrite_class.ClassToFunctionRewriter(
                 context, remove_decorators=False
             )
-        )
-    for l in transformers:
-        logger.debug("running transformer: %s", l)
-        rewritten = rewritten.visit(l)
+        ]
+    for t in transformers:
+        logger.debug("running transformer: %s", t)
+        with t.resolve(wrapper):
+            program = t.transform_module(program)
 
-    print(rewritten.code)
+    transformers = [
+        AddImportsVisitor(context),
+        RemoveImportsVisitor(context),
+        rewrite_imports.RewriteImports(context),
+        rewrite_imports.LarkyImportSorter(context),
+    ]
+
+    wrapper = libcst.MetadataWrapper(program)
+    for t in transformers:
+        wrapper.resolve_many(t.get_inherited_dependencies())
+        logger.debug("running transformer: %s", t)
+        with t.resolve(wrapper):
+            program = t.transform_module(program)
+
+    print(program.code)
+    if args.for_tests:
+        tree = ast.parse(program.code)
+        s = functionz.testsuite_generator(tree)
+        print(s)
 
 
-def _package_path(args, filename):
+DOT_PY: Pattern[str] = re.compile(r"(__init__)?\.py$")
+
+
+def _module_name(path: str) -> Optional[str]:
+    return DOT_PY.sub("", path).replace("/", ".").rstrip(".")
+
+
+def _full_module_name(pkg_path, filename):
     # use file_path to compute relative path?
     # >>> os.path.relpath("/src/python-jose/jose/jwt.py", "/src/python-jose")
     # 'jose/jwt.py'
-    package_path = args.pkg_path if args.pkg_path else filename
-    return package_path
+    if not pkg_path:
+        return None
+    mname = _module_name(filename)
+    if not mname.startswith(pkg_path + "."):
+        return f"{pkg_path}.{mname}"
+    return mname
 
 
 def execute(args: argparse.Namespace) -> None:

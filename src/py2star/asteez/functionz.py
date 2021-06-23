@@ -5,9 +5,9 @@ import textwrap
 import typing
 
 import libcst as cst
-from libcst import matchers as m
+from libcst import Yield, matchers as m
 from libcst import Attribute, BaseExpression, Call, Name, codemod
-from libcst.codemod import CodemodContext
+from libcst.codemod import CodemodContext, ContextAwareTransformer
 from libcst.codemod.visitors import AddImportsVisitor
 
 
@@ -43,7 +43,7 @@ def testsuite_generator(tree):
     return s
 
 
-class GeneratorToFunction(codemod.VisitorBasedCodemodCommand):
+class GeneratorToFunction(codemod.ContextAwareTransformer):
     def __init__(self, context: CodemodContext):
         super(GeneratorToFunction, self).__init__(context)
 
@@ -57,10 +57,15 @@ class GeneratorToFunction(codemod.VisitorBasedCodemodCommand):
             cst.ListComp(elt=updated_node.elt, for_in=updated_node.for_in),
         )
 
+    def leave_Yield(
+        self, original_node: "Yield", updated_node: "Yield"
+    ) -> "BaseExpression":
+        return updated_node.deep_replace(
+            updated_node, cst.Return(value=updated_node.value)
+        )
 
-class RewriteTypeChecks(codemod.VisitorBasedCodemodCommand):
-    def __init__(self, context: CodemodContext):
-        super(RewriteTypeChecks, self).__init__(context)
+
+class RewriteTypeChecks(codemod.ContextAwareTransformer):
 
     # types.star currently has...
     def leave_Call(
