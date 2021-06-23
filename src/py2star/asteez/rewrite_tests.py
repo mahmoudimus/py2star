@@ -1,7 +1,9 @@
 import binascii
+import collections
 import re
 import uuid
 import typing
+from collections import Iterable
 
 from dataclasses import dataclass
 from functools import partial
@@ -23,6 +25,7 @@ from libcst.codemod.visitors import AddImportsVisitor, RemoveImportsVisitor
 
 from py2star.asteez.rewrite_class import (
     ClassInstanceVariableRemover,
+    ClassToFunctionRewriter,
     FunctionParameterStripper,
     PrefixMethodByClsName,
     UndecorateClassMethods,
@@ -275,6 +278,7 @@ class AssertStatementRewriter(cst.codemod.ContextAwareTransformer):
     ) -> "cst.BaseExpression":
         call = original_node
         args = call.args
+        AddImportsVisitor.add_needed_import(self.context, "asserts")
         for match in self.matchers:
             if not m.matches(call, match.matcher):
                 continue
@@ -283,7 +287,6 @@ class AssertStatementRewriter(cst.codemod.ContextAwareTransformer):
             _args = args  # [args[i] for i in range(match.arity)]
             return match.replacement(*_args)
 
-        AddImportsVisitor.add_needed_import(self.context, "asserts")
         return updated_node
 
     def leave_With(
@@ -345,12 +348,50 @@ class DedentModule(codemod.ContextAwareTransformer):
     ) -> "cst.Module":
 
         module_body = []
-        for classdef in updated_node.body:
-            indentedbody = typing.cast(cst.IndentedBlock, classdef.body)
-            module_body.extend([*indentedbody.body])
+        for stmt in updated_node.body:
+            if not m.matches(stmt, m.ClassDef()):
+                module_body.append(stmt)
+                continue
+            classdef = cst.ensure_type(stmt, cst.ClassDef)
+            if not m.matches(
+                classdef,
+                m.ClassDef(
+                    bases=[
+                        m.AtLeastN(
+                            n=1,
+                            matcher=m.OneOf(
+                                m.Arg(
+                                    value=m.Attribute(
+                                        value=m.Name("unittest"),
+                                        attr=m.Name("TestCase"),
+                                    )
+                                ),
+                                m.Arg(value=m.Name("TestCase")),
+                            ),
+                        )
+                    ]
+                ),
+            ):
+                cf = ClassToFunctionRewriter(
+                    self.context, remove_decorators=True
+                )
+                classdef = classdef.visit(cf)
+                module_body.append(classdef)
+                continue
+            # here is where we start on the indent blocks
+            indentedbody = cst.ensure_type(classdef.body, cst.IndentedBlock)
+            module_body.extend([b for b in indentedbody.body])
+            #
+            # try:
+            #     indentedbody = cst.ensure_type(classdef.body, cst.IndentedBlock)
+            # except Exception:
+            #     module_body.append(classdef)
+            # else:
+            #     module_body.extend([b for b in indentedbody.body])
             # module_body.append(deindented_body)
-
-        return updated_node.with_changes(body=module_body)
+        if module_body:
+            return updated_node.with_changes(body=module_body)
+        return updated_node
 
 
 class Unittest2Functions(codemod.ContextAwareTransformer):
@@ -367,9 +408,11 @@ class Unittest2Functions(codemod.ContextAwareTransformer):
     def __init__(self, context: CodemodContext, class_name=None):
         super(Unittest2Functions, self).__init__(context)
         self.class_name = class_name
+        self.class_bases = None
 
     def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
         self.class_name = node.name.value
+        self.class_bases = node.bases
         return True
 
     # def leave_ClassDef(
@@ -407,5 +450,6 @@ class Unittest2Functions(codemod.ContextAwareTransformer):
             self.context, "unittest", asname="TestCase"
         )
         AddImportsVisitor.add_needed_import(self.context, "unittest")
+        # return updated_node
         dedenter = DedentModule(self.context)
         return updated_node.visit(dedenter)

@@ -206,6 +206,7 @@ def larkify(filename, args):
         functionz.RewriteTypeChecks(context),
         functionz.GeneratorToFunction(context),
         rewrite_comparisons.UnchainComparison(context),
+        rewrite_comparisons.RemoveIfNameEqualsMain(context),
         rewrite_comparisons.IsComparisonTransformer(context),
         remove_types.RemoveTypesTransformer(context),
         remove_exceptions.RemoveExceptions(context),
@@ -220,7 +221,7 @@ def larkify(filename, args):
         ]
     else:
         # we don't want class to function rewriter for tests since
-        # there's already a fixer for tests based on lib2to3
+        # there's a special class rewriter for tests
         transformers += [
             rewrite_class.ClassToFunctionRewriter(
                 context, remove_decorators=False

@@ -4,7 +4,13 @@ from itertools import chain, tee
 from typing import Union
 
 import libcst as cst
-from libcst import codemod, matchers as m
+from libcst import (
+    BaseStatement,
+    FlattenSentinel,
+    RemovalSentinel,
+    codemod,
+    matchers as m,
+)
 from libcst.codemod import CodemodContext, ContextAwareTransformer
 
 
@@ -105,3 +111,25 @@ class IsComparisonTransformer(codemod.ContextAwareTransformer):
                 whitespace_before=original_op.whitespace_before,
             )
         )
+
+
+class RemoveIfNameEqualsMain(codemod.ContextAwareTransformer):
+    def __init__(self, context):
+        super(RemoveIfNameEqualsMain, self).__init__(context)
+
+    @m.call_if_inside(
+        m.If(
+            test=m.Comparison(
+                left=m.Name("__name__"),
+                comparisons=[
+                    m.ComparisonTarget(comparator=m.SimpleString("'__main__'"))
+                ],
+            )
+        )
+    )
+    def leave_If(
+        self, original_node: "If", updated_node: "If"
+    ) -> Union[
+        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
+    ]:
+        return cst.RemoveFromParent()
