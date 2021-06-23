@@ -407,7 +407,7 @@ class LarkyImportSorter(codemod.ContextAwareTransformer):
 
     def __init__(self, context: CodemodContext) -> None:
         super().__init__(context)
-        self.names = []
+        self.names = set()
 
     def process_node(
         self,
@@ -421,11 +421,11 @@ class LarkyImportSorter(codemod.ContextAwareTransformer):
             return
         # we are in global scope
         if not name.startswith("_"):
-            self.names.append(name)
+            self.names.add(name)
 
     @m.call_if_inside(m.Call(func=m.Name(value="load")))
     def visit_Call(self, node: "Call") -> typing.Optional[bool]:
-        self.names.append((node.args[0].value, node))
+        self.names.add((node.args[0].value, node))
         return True
 
     @m.call_if_inside(m.Expr(value=m.Call(func=m.Name(value="load"))))
