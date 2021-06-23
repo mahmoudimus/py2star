@@ -728,6 +728,17 @@ class TestSwapByteLiteralPrefix(MetadataResolvingCodemodTest):
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
 
+    def test_only_swaps_the_prefix(self):
+        before = """
+        x = br"brrbrbbr"
+        """
+
+        after = """
+        x = rb"brrbrbbr"
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
 
 class TestRewriteImporting(MetadataResolvingCodemodTest):
 
