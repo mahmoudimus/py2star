@@ -196,6 +196,7 @@ def larkify(filename, args):
         full_module_name=_full_module_name(args.pkg_path, filename),
     )
     transformers = [
+        rewrite_comparisons.RemoveIfNameEqualsMain(context),
         remove_exceptions.RewriteImplicitStringConcat(context),
         remove_exceptions.SwapByteStringPrefixes(context),
         remove_exceptions.SubMethodsWithLibraryCallsInstead(context),
@@ -209,7 +210,6 @@ def larkify(filename, args):
         functionz.RewriteTypeChecks(context),
         functionz.GeneratorToFunction(context),
         rewrite_comparisons.UnchainComparison(context),
-        rewrite_comparisons.RemoveIfNameEqualsMain(context),
         rewrite_comparisons.IsComparisonTransformer(context),
         remove_types.RemoveTypesTransformer(context),
         remove_exceptions.RemoveExceptions(context),

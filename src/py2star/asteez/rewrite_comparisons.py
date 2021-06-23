@@ -122,7 +122,12 @@ class RemoveIfNameEqualsMain(codemod.ContextAwareTransformer):
             test=m.Comparison(
                 left=m.Name("__name__"),
                 comparisons=[
-                    m.ComparisonTarget(comparator=m.SimpleString("'__main__'"))
+                    m.ComparisonTarget(
+                        comparator=m.OneOf(
+                            m.SimpleString("'__main__'"),
+                            m.SimpleString('"__main__"'),
+                        )
+                    )
                 ],
             )
         )
