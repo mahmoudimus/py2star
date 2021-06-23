@@ -249,7 +249,7 @@ def _rand(seed=None):
     return f"_larky_{binascii.crc32(seed)}"
 
 
-class AssertStatementRewriter(cst.codemod.ContextAwareTransformer):
+class UnittestAssertMethodsRewriter(cst.codemod.ContextAwareTransformer):
     """
     Converts unittest assert methods to larky asserts, i.e.:
 
@@ -260,7 +260,7 @@ class AssertStatementRewriter(cst.codemod.ContextAwareTransformer):
     matchers: List[Rewrite]
 
     def __init__(self, context):
-        super(AssertStatementRewriter, self).__init__(context)
+        super(UnittestAssertMethodsRewriter, self).__init__(context)
         self.matchers = _build_matchers()
 
     # specialize with statements later.

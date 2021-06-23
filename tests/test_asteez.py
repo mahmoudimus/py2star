@@ -89,7 +89,7 @@ while pos <= finish:
         """
 pos = 0
 finish = 5
-for _while_ in range(_WHILE_LOOP_EMULATION_ITERATION):
+for _while_ in range(WHILE_LOOP_EMULATION_ITERATION):
     if pos > finish:
         break
     m = self.search(s, pos)
@@ -560,7 +560,7 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
         """
         after = """
         def Element(tag, attrib={}, **extra):
-            self = larky.mutablestruct(__class__='Element')
+            self = larky.mutablestruct(__name__='Element', __class__=Element)
             def __init__(tag, attrib, extra):
                 if not isinstance(attrib, dict):
                     raise TypeError(
@@ -592,7 +592,7 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
         """
         after = """
         def XMLPullParser(events=None, _parser=None):
-            self = larky.mutablestruct(__class__='XMLPullParser')
+            self = larky.mutablestruct(__name__='XMLPullParser', __class__=XMLPullParser)
             def __init__(events, _parser):
                 self._events_queue = []
                 self._index = 0
@@ -630,21 +630,21 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
         """
         after = """
         def Foo():
-            self = larky.mutablestruct(__class__='Foo')
+            self = larky.mutablestruct(__name__='Foo', __class__=Foo)
             def __init__():
                 pass
                 return self
             self = __init__()
             return self
         def Bar(var, value):
-            self = larky.mutablestruct(__class__='Bar')
+            self = larky.mutablestruct(__name__='Bar', __class__=Bar)
             def __init__(var, value):
                 pass
                 return self
             self = __init__(var, value)
             return self
         def Complicated(x, y, z=1):
-            self = larky.mutablestruct(__class__='Complicated')
+            self = larky.mutablestruct(__name__='Complicated', __class__=Complicated)
             def __init__(x, y, z):
                 pass
                 return self
@@ -666,6 +666,51 @@ def _remove_empty_lines(mystr):
     # "".join([s for s in t.strip().splitlines(True)
     #         if s.strip("\r\n").strip()])
     return [line for line in mystr.split("\n") if line.strip() != ""]
+
+
+class TestAssertStatementRewriter(MetadataResolvingCodemodTest):
+
+    TRANSFORM = remove_exceptions.AssertStatementRewriter
+
+    def test_simple_assert_rewrite(self):
+        before = """
+        assert 1 == 1, "what?"
+        """
+
+        after = """
+        if not (1 == 1):
+            fail("what?")
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+    def test_assert_with_default_msg(self):
+        before = """
+        assert 1 == 1
+        """
+
+        after = """
+        if not (1 == 1):
+            fail("assert 1 == 1 failed!")
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
+
+    def test_nested_assert(self):
+        before = """
+        def foo():
+            assert True != False
+            return True
+        """
+
+        after = """
+        def foo():
+            if not (True != False):
+                fail("assert True != False failed!")
+            return True
+        """
+        ctx = self._get_context_override(before)
+        self.assertCodemod(before, after, context_override=ctx)
 
 
 class TestRewriteImporting(MetadataResolvingCodemodTest):
@@ -1104,16 +1149,16 @@ class TestUnittest2Functions(MetadataResolvingCodemodTest):
             asserts.assert_that(bar2).is_equal_to(map(int, bar))"""
         # lets re-write the assert statements
         ctx = TestAssertStatementRewriter()._get_context_override(before)
-        rewriter = rewrite_tests.AssertStatementRewriter(ctx)
+        rewriter = rewrite_tests.UnittestAssertMethodsRewriter(ctx)
         before = ctx.module.visit(rewriter).code
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
 
 
 @pytest.mark.usefixtures("simple_class_before")
-class TestAssertStatementRewriter(MetadataResolvingCodemodTest):
+class TestUnittestAssertMethodsRewriter(MetadataResolvingCodemodTest):
 
-    TRANSFORM = rewrite_tests.AssertStatementRewriter
+    TRANSFORM = rewrite_tests.UnittestAssertMethodsRewriter
 
     # @pytest.fixture(autouse=True)
     # def fixture(self, simple_class):

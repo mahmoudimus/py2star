@@ -118,6 +118,14 @@ class RemoveUnusedImports(cst.CSTTransformer):
         return self.leave_import_alike(original_node, updated_node)
 
 
+def in_stdlib_namespace(mod_name):
+    if importutils.is_std_lib(mod_name):
+        return True
+    if mod_name.lower() in ("larky", "sets"):
+        return True
+    return False
+
+
 # check AddImportsVisitor
 # # from libcst.codemod.visitors import AddImportsVisitor
 # class RewriteImports(cst.CSTTransformer):
@@ -208,7 +216,7 @@ class RewriteImports(codemod.ContextAwareTransformer):
             else:
                 mod_name = import_attr.value
 
-        ns = "stdlib" if importutils.is_std_lib(mod_name) else "vendor"
+        ns = "stdlib" if in_stdlib_namespace(mod_name) else "vendor"
         try:
             pkg = f'"@{ns}//{mod_name.replace(".", "/")}"'
         except AttributeError as e:

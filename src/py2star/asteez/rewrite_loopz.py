@@ -1,7 +1,8 @@
 import sys
 import typing
 
-import libcst as ast
+import libcst as cst
+import libcst.matchers as m
 from libcst import codemod
 from libcst.codemod.visitors import AddImportsVisitor
 
@@ -9,40 +10,44 @@ from libcst.codemod.visitors import AddImportsVisitor
 def invert(node):
 
     inverse = {
-        ast.Equal: ast.NotEqual,
-        ast.NotEqual: ast.Equal,
-        ast.LessThan: ast.GreaterThanEqual,
-        ast.LessThanEqual: ast.GreaterThan,
-        ast.GreaterThan: ast.LessThanEqual,
-        ast.GreaterThanEqual: ast.LessThan,
-        ast.Is: ast.IsNot,
-        ast.IsNot: ast.Is,
-        ast.In: ast.NotIn,
-        ast.NotIn: ast.In,
+        cst.Equal: cst.NotEqual,
+        cst.NotEqual: cst.Equal,
+        cst.LessThan: cst.GreaterThanEqual,
+        cst.LessThanEqual: cst.GreaterThan,
+        cst.GreaterThan: cst.LessThanEqual,
+        cst.GreaterThanEqual: cst.LessThan,
+        cst.Is: cst.IsNot,
+        cst.IsNot: cst.Is,
+        cst.In: cst.NotIn,
+        cst.NotIn: cst.In,
     }
 
-    if type(node) == ast.Comparison:
+    if type(node) == cst.Comparison:
         op = type(node.comparisons[0].operator)
-        inverse_node = ast.Comparison(
+        inverse_node = cst.Comparison(
             left=node.left,
             comparisons=[
-                ast.ComparisonTarget(
+                cst.ComparisonTarget(
                     inverse[op](), node.comparisons[0].comparator
                 )
             ],
         )
-    elif type(node) == ast.Name and node.value in [True, False]:
-        inverse_node = ast.Name(value=f"{not node.value}")
+    elif type(node) == cst.Name and node.value in [True, False]:
+        inverse_node = cst.Name(value=f"{not node.value}")
     else:
-        inverse_node = ast.UnaryOperation(operator=ast.Not(), expression=node)
+        inverse_node = cst.UnaryOperation(operator=cst.Not(), expression=node)
 
     return inverse_node
 
 
 class WhileToForLoop(codemod.ContextAwareTransformer):
     def leave_While(
-        self, original_node: ast.While, updated_node: ast.While
-    ) -> typing.Union[ast.BaseStatement, ast.RemovalSentinel]:
+        self, original_node: cst.While, updated_node: cst.While
+    ) -> typing.Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel["cst.BaseStatement"],
+        cst.RemovalSentinel,
+    ]:
         try:
             inverse_node = invert(updated_node.test)
         except (AttributeError, IndexError) as e:
@@ -51,27 +56,27 @@ class WhileToForLoop(codemod.ContextAwareTransformer):
             )
             return updated_node
 
-        block: ast.IndentedBlock = updated_node.body
+        block: cst.IndentedBlock = updated_node.body
         new_body = list(block.body)
         new_body.insert(
             0,
-            ast.If(
+            cst.If(
                 test=inverse_node,
-                body=ast.IndentedBlock(
-                    body=[ast.SimpleStatementLine(body=[ast.Break()])]
+                body=cst.IndentedBlock(
+                    body=[cst.SimpleStatementLine(body=[cst.Break()])]
                 ),
                 orelse=None,
             ),
         )
-        as_for = ast.For(
-            target=ast.Name(value="_while_"),
-            iter=ast.Call(
-                func=ast.Name(value="range"),
+        as_for = cst.For(
+            target=cst.Name(value="_while_"),
+            iter=cst.Call(
+                func=cst.Name(value="range"),
                 args=[
-                    ast.Arg(value=ast.Name("_WHILE_LOOP_EMULATION_ITERATION"))
+                    cst.Arg(value=cst.Name("WHILE_LOOP_EMULATION_ITERATION"))
                 ],
             ),
-            body=ast.IndentedBlock(
+            body=cst.IndentedBlock(
                 body=new_body,
                 footer=block.footer,
                 header=block.header,
@@ -82,5 +87,10 @@ class WhileToForLoop(codemod.ContextAwareTransformer):
             self.context,
             "larky",
             "larky",
+        )
+        AddImportsVisitor.add_needed_import(
+            self.context,
+            "larky",
+            "WHILE_LOOP_EMULATION_ITERATION",
         )
         return updated_node.deep_replace(updated_node, as_for)

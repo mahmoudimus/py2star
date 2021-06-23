@@ -87,6 +87,79 @@ class DesugarDecorators(codemod.ContextAwareTransformer):
         )
 
 
+class AssertStatementRewriter(codemod.ContextAwareTransformer):
+    """
+    assert 1 == 1, "what?"
+    |_ => if not (1 == 1):
+    |_ =>     fail("what?")
+    assert 1 != 2
+    assert 1 == 2
+    """
+
+    def __init__(self, context, for_tests=False):
+        super(AssertStatementRewriter, self).__init__(context)
+        self.for_tests = for_tests
+
+    @m.call_if_inside(
+        m.SimpleStatementLine(
+            body=[m.Assert(test=m.DoNotCare(), msg=m.DoNotCare())]
+        )
+    )
+    def leave_SimpleStatementLine(
+        self,
+        original_node: "SimpleStatementLine",
+        updated_node: "SimpleStatementLine",
+    ) -> Union[
+        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
+    ]:
+        assert_stmt = ensure_type(updated_node.body[0], cst.Assert)
+        msg = assert_stmt.msg
+        if not msg:
+            msg = cst.SimpleString(
+                f'"{self.module.code_for_node(assert_stmt)} failed!"'
+            )
+        if_stmt = cst.If(
+            test=cst.UnaryOperation(
+                operator=cst.Not(),
+                expression=assert_stmt.test.with_changes(
+                    lpar=[
+                        cst.LeftParen(
+                            whitespace_after=cst.SimpleWhitespace(
+                                value="",
+                            ),
+                        ),
+                    ],
+                    rpar=[
+                        cst.RightParen(
+                            whitespace_before=cst.SimpleWhitespace(
+                                value="",
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            body=cst.IndentedBlock(
+                body=[
+                    cst.SimpleStatementLine(
+                        body=[
+                            cst.Expr(
+                                value=cst.Call(
+                                    func=cst.Name(
+                                        value="fail",
+                                        lpar=[],
+                                        rpar=[],
+                                    ),
+                                    args=[cst.Arg(value=msg)],
+                                )
+                            )
+                        ],
+                    ),
+                ],
+            ),
+        )
+        return updated_node.deep_replace(updated_node, if_stmt)
+
+
 class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
     """
     str.decode(xxxx) => codecs.decode(xxxx)

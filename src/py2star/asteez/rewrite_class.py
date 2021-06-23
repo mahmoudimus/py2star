@@ -38,11 +38,17 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         super(ClassToFunctionRewriter, self).__init__(context)
         self.namespace_defs = namespace_defs
         self.remove_decorators = remove_decorators
-        self.class_name = None
+        self.parent_class = None
         self.init_params = None
 
+    @property
+    def class_name(self):
+        if not self.parent_class:
+            return
+        return self.parent_class.name.value
+
     def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
-        self.class_name = node.name.value
+        self.parent_class = node
         return True
 
     def leave_FunctionDef(
@@ -83,7 +89,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                 before,
                 updated_node,
                 self_func_assign,
-            ) = self._emulate_class_construction(updated_node, self.class_name)
+            ) = self._emulate_class_construction(updated_node)
             prefixer = PrefixMethodByClsName(
                 self.context, self.class_name, excluded_methods=("__init__",)
             )
@@ -144,8 +150,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         )
         return None, cst.SimpleStatementLine(body=[self_func_assign])
 
-    @staticmethod
-    def _emulate_class_construction(updated_node: cst.FunctionDef, class_name):
+    def _emulate_class_construction(self, updated_node: cst.FunctionDef):
         func_name = updated_node.name.value
         args = []
         for p in itertools.chain(
@@ -157,7 +162,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             if not p:
                 continue
             args.append(cst.Arg(value=p.name))
-        # self = larky.mutablestruct(__class__='xxxx')
+        # self = larky.mutablestruct(__name__='xxxx', __class__=xxxx)
         before = cst.SimpleStatementLine(
             body=[
                 cst.Assign(
@@ -179,7 +184,21 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                         ),
                         args=[
                             cst.Arg(
-                                value=cst.SimpleString(value=f"'{class_name}'"),
+                                value=cst.SimpleString(
+                                    value=f"'{self.class_name}'"
+                                ),
+                                keyword=cst.Name(value="__name__"),
+                                equal=cst.AssignEqual(
+                                    whitespace_before=cst.SimpleWhitespace(
+                                        value="",
+                                    ),
+                                    whitespace_after=cst.SimpleWhitespace(
+                                        value="",
+                                    ),
+                                ),
+                            ),
+                            cst.Arg(
+                                value=self.parent_class.name,
                                 keyword=cst.Name(value="__class__"),
                                 equal=cst.AssignEqual(
                                     whitespace_before=cst.SimpleWhitespace(
@@ -189,7 +208,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                                         value="",
                                     ),
                                 ),
-                            )
+                            ),
                         ],
                     ),
                 )
@@ -270,8 +289,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         #     params, params.with_changes(star_arg=cst.MaybeSentinel.DEFAULT)
         # )
         body = self.append_return_self_to_body(updated_node)
-        self.class_name = None
-        return updated_node.deep_replace(
+        self.parent_class = updated_node.deep_replace(
             updated_node,
             cst.FunctionDef(
                 name=updated_node.name,
@@ -279,6 +297,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                 body=body,
             ),
         )
+        return self.parent_class
 
     @staticmethod
     def append_return_self_to_body(updated_node):

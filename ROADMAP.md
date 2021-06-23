@@ -7,8 +7,8 @@
 ### imports     
 
 - [ ] from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
-- [x] relative imports: 
-  1. from .base import y => load("@vendor//pkgname/base/y", y="y")  
+- [x] relative imports:
+  - [x] from .base import y => load("@vendor//pkgname/base/y", y="y")  
 
 - [ ] warn on unknown symbols?
 - [ ] potential corner case: self.xx in dedented functions not in an enclosing function
@@ -38,17 +38,17 @@ def do(namespace):
         raise KeyError  # gets translated to return KeyError! WRONG!
 ```
 
-- [ ] for non-tests, rewrite `assert self._last.tail == None, "internal error (tail)"` to
+- [x] for non-tests, rewrite `assert self._last.tail == None, "internal error (tail)"` to
       the inverse `if not (self._last.tail == None): ...`
 
 - [ ] `type(text).__name__` or `type(text).__class__.__name__` needs to be changed to `type(text)`
 - [ ] for/else (replace)
-- [ ] `_WHILE_LOOP_EMULATION_ITERATION`
+- [x] `_WHILE_LOOP_EMULATION_ITERATION` => `WHILE_LOOP_EMULATION_ITERATION` instead
 - [ ] `events[:index] = []` == `for i in range(index): events.pop(0)` 
 
     
 - [x] decode()/encode() should be translated to codecs.encode()/codecs.decode()
-- [] `self.__class__` => `__init__()` or `function()...`
+- [x] `self.__class__` => `__init__()` or `function()...`
 - [] migrate this:
 ```python
     class ParseError(SyntaxError):
@@ -97,7 +97,7 @@ def foo(target):
 
 ## bug fixes
 
-- [ ] `__class__` vs `__name__` (oops!, i misunderstood semantics..)
+- [x] `__class__` vs `__name__` (oops!, i misunderstood semantics..)
 
 ### exceptions
 

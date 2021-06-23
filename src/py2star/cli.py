@@ -218,16 +218,18 @@ def larkify(filename, args):
     if args.for_tests:
         # TODO: can this by dynamic so we don't pass this in?
         transformers += [
-            rewrite_tests.AssertStatementRewriter(context),
+            rewrite_tests.UnittestAssertMethodsRewriter(context),
             rewrite_tests.Unittest2Functions(context),
         ]
     else:
         # we don't want class to function rewriter for tests since
         # there's a special class rewriter for tests
         transformers += [
+            # only rewrite asserts in non-test contexts?
+            remove_exceptions.AssertStatementRewriter(context),
             rewrite_class.ClassToFunctionRewriter(
                 context, remove_decorators=False
-            )
+            ),
         ]
     for t in transformers:
         logger.debug("running transformer: %s", t)
