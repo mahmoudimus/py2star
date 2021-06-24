@@ -482,11 +482,23 @@ class RemoveExceptions(codemod.ContextAwareTransformer):
         args2 = []
         for a in exc_name.args:
             if isinstance(a.value, cst.BinaryOperation):
-                newval = cst.parse_expression(
-                    f'"{exc_name.func.value}: {a.value.left.raw_value}"'
-                )
+                # s = self.module.code_for_node(a.value.left)
+                # newval = cst.parse_expression(
+                #     s.replace('"', f'"{exc_name.func.value}: ', 1)
+                # )
+                # newval = cst.parse_expression(
+                #     f'"{exc_name.func.value}: {a.value.left.raw_value}"'
+                # )
+                # args2.append(
+                #     a.with_changes(value=a.value.with_changes(left=newval))
+                # )
+                newval = cst.parse_expression(f'"{exc_name.func.value}: "')
                 args2.append(
-                    a.with_changes(value=a.value.with_changes(left=newval))
+                    a.with_changes(
+                        value=cst.BinaryOperation(
+                            left=newval, operator=cst.Add(), right=a.value
+                        )
+                    )
                 )
                 # args2.append(
                 #     a.with_changes(

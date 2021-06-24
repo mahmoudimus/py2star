@@ -418,7 +418,7 @@ class TestRewriteExceptions(MetadataResolvingCodemodTest):
         after = """
         def foo(a, b, c):
             if not a:
-                return Error("ValueError: a: %s is not truthy!" % (a,))
+                return Error("ValueError: " + "a: %s is not truthy!" % (a,))
         """
         mod = cst.MetadataWrapper(
             cst.parse_module(self.make_fixture_data(before))
@@ -466,6 +466,39 @@ class TestRewriteExceptions(MetadataResolvingCodemodTest):
         )
         mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
 
+        self.assertCodemod(
+            before, after, context_override=CodemodContext(wrapper=mod)
+        )
+
+    def test_raise_concatenatedstring(self):
+        before = """
+        # Section 5.3 of NIST SP 800 38B and Appendix B
+        if bs == 8:
+            const_Rb = 0x1B
+            self._max_size = 8 * (2 ** 21)
+        elif bs == 16:
+            const_Rb = 0x87
+            self._max_size = 16 * (2 ** 48)
+        else:
+            raise TypeError("CMAC requires a cipher with a block size"
+                            " of 8 or 16 bytes, not %d" % bs)
+        """
+        after = """
+        # Section 5.3 of NIST SP 800 38B and Appendix B
+        if bs == 8:
+            const_Rb = 0x1B
+            self._max_size = 8 * (2 ** 21)
+        elif bs == 16:
+            const_Rb = 0x87
+            self._max_size = 16 * (2 ** 48)
+        else:
+            return Error("TypeError: " + "CMAC requires a cipher with a block size"
+                            " of 8 or 16 bytes, not %d" % bs)
+        """
+        mod = cst.MetadataWrapper(
+            cst.parse_module(self.make_fixture_data(before))
+        )
+        mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
         self.assertCodemod(
             before, after, context_override=CodemodContext(wrapper=mod)
         )

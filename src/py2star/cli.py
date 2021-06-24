@@ -197,7 +197,6 @@ def larkify(filename, args):
     )
     transformers = [
         rewrite_comparisons.RemoveIfNameEqualsMain(context),
-        remove_exceptions.RewriteImplicitStringConcat(context),
         remove_exceptions.SwapByteStringPrefixes(context),
         remove_exceptions.SubMethodsWithLibraryCallsInstead(context),
         remove_exceptions.UnpackTargetAssignments(context),
@@ -213,6 +212,7 @@ def larkify(filename, args):
         rewrite_comparisons.IsComparisonTransformer(context),
         remove_types.RemoveTypesTransformer(context),
         remove_exceptions.RemoveExceptions(context),
+        remove_exceptions.RewriteImplicitStringConcat(context),
     ]
 
     # must run last otherwise messes up all the other transformers above
