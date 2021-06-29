@@ -90,3 +90,56 @@ can be:
 ```python
 X = operator.matmul(X, Y)
 ```
+
+### Recursion/DFS
+
+Starlarky does not allow recursive call, so we use BFS/iteration instead:
+
+```python
+class Element:
+    def iter(self, tag=None):
+        if tag == "*":
+            tag = None
+        if tag is None or self.tag == tag:
+            yield self
+        for e in self._children:
+            yield from e.iter(tag)
+    
+
+def select_child(result):
+    for elem in result:
+        for e in elem.iter():
+            if e is not elem:
+                yield e
+
+```
+
+can be:
+
+```python
+class Element:
+    # remove recursive method
+    # def iter(self, tag=None):
+    #     if tag == "*":
+    #         tag = None
+    #     if tag is None or self.tag == tag:
+    #         yield self
+    #     for e in self._children:
+    #         yield from e.iter(tag)
+
+def traverse_descendant(e, tag, rval):
+    qu = e._children[0:] # duplicate arr
+    for _ in range(_WHILE_LOOP_EMULATION_ITERATION):
+        if len(qu) == 0:
+            break
+        current = qu.pop(0)
+        if tag == None or tag == '*' or current.tag == tag:
+            rval.append(current)
+        qu.extend(current._children)
+
+def select_child(result):
+    rval = []
+    for e in result:
+        traverse_descendant(e, None, rval)
+    return rval
+```
