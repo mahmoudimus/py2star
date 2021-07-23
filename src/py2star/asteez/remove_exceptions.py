@@ -260,13 +260,29 @@ class RewriteImplicitStringConcat(codemod.ContextAwareTransformer):
     a = (" " +
     " ")
     """
+    METADATA_DEPENDENCIES = (ParentNodeProvider,)
 
     def leave_ConcatenatedString(
         self, original: "ConcatenatedString", updated: "ConcatenatedString"
     ) -> "BaseExpression":
+
         left = updated.left
         right = updated.right
         ws_between = updated.whitespace_between
+
+        # ctx = original
+        # current = cst.BinaryOperation(
+        #     left=ctx.left,
+        #     operator=cst.Add(whitespace_after=ctx.whitespace_between),
+        #     right=ctx.right,
+        # )
+        # while isinstance(ctx, (cst.ConcatenatedString,)):
+        #     ctx = self.get_metadata(ParentNodeProvider, ctx)
+        #
+        #
+        # node = ctx.deep_replace(ctx, current)
+        # return node
+        # print(cst.parse_module("").code_for_node(node))
 
         return updated.deep_replace(
             updated,
@@ -274,7 +290,7 @@ class RewriteImplicitStringConcat(codemod.ContextAwareTransformer):
                 left=left,
                 operator=cst.Add(whitespace_after=ws_between),
                 right=right,
-            ),
+            )
         )
 
 

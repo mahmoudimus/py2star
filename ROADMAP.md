@@ -3,6 +3,10 @@
 ### string formatting
 
 - `return "".join(["%02x" % bord(x) for x in self.digest()])` "%02x" is not supported :(
+- `larky.strings.zfill`
+- `if not (4 <= cost) and (cost <= 31)` => `if not ((4 <= cost) and (cost <= 31))`
+- `int(b'1', 2)`
+
 
 ### imports     
 

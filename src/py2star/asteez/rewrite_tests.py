@@ -94,7 +94,7 @@ def comp_op(op, lefty, righty):
 
 
 @arity(1)
-def unary_op(op, suty):
+def unary_op(op, suty, *args):
     """/Users/mahmoud/src/py-in-java/pycryptodome/lib/transform.py
     /Users/mahmoud/src/py2star/transform1.py
     Converts a method like: ``self.failUnless(True)`` to
@@ -122,7 +122,9 @@ def raises_op(exc_cls, *args):
     invokable = _codegen.code_for_node(
         cst.Call(func=args[0].value, args=args[1:])
     )
-    regex = f'".*?{exc_cls.value.value}"'
+    regex = '".*?"'
+    if isinstance(exc_cls.value, cst.Name) and isinstance(exc_cls.value.value, str):
+        regex = f'".*?{exc_cls.value.value}"'
     return cst.parse_expression(
         f"asserts.assert_fails(lambda: {invokable}, {regex})"
     )
@@ -152,9 +154,19 @@ def raises_regex_op(exc_cls, regex, *args):
             ],
         )
     )
-    regex = f'".*?{exc_cls.value.value}.*{regex.value.evaluated_value}"'
+    if isinstance(exc_cls.value, cst.Name):
+        matchstr = f'".*?{exc_cls.value.value}'
+    else:
+        # it's a function call or something..
+        matchstr = f'".*?'
+
+    if isinstance(regex.value, cst.Name):
+        matchstr = matchstr + f'.*{regex.value.value}"'
+    else:
+        matchstr = matchstr + f'.*{regex.value.evaluated_value}"'
+
     return cst.parse_expression(
-        f"asserts.assert_fails(lambda: {invokable}, {regex})"
+        f"asserts.assert_fails(lambda: {invokable}, {matchstr})"
     )
 
 
