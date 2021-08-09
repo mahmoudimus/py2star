@@ -87,7 +87,7 @@ def arity(n):
 
 
 @arity(2)
-def comp_op(op, lefty, righty):
+def comp_op(op, lefty, righty, msg=None):
     left = _codegen.code_for_node(lefty.value)
     right = _codegen.code_for_node(righty.value)
     return cst.parse_expression(f"asserts.assert_that({left}).{op}({right})")

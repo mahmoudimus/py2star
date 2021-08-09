@@ -367,13 +367,12 @@ class TestRewriteImplicitStringConcat(MetadataResolvingCodemodTest):
         """
 
         after = """
-        print("Attempting to verify a message with a private key. " +
-              "This is not recommended.")
+        print(("Attempting to verify a message with a private key. " +
+              "This is not recommended."))
         """
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
 
-    @unittest.skip('failing')
     def test_convert_implicit_raw_string_concat(self):
         before = """
         regex1 = (
@@ -389,10 +388,17 @@ class TestRewriteImplicitStringConcat(MetadataResolvingCodemodTest):
         )
         """
         after = """
-        nope
+        regex1 = (r"pack_into requires a buffer of at least 6 " +
+            r"bytes for packing 1 bytes at offset 5 " +
+            r"\(actual buffer size is 1\)")
+        
+        regex2 = (r"unpack_from requires a buffer of at least 6 " +
+            r"bytes for unpacking 1 bytes at offset 5 " +
+            r"\(actual buffer size is 1\)")
         """
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
+
 
 class TestTopLevelExceptionRemoval(MetadataResolvingCodemodTest):
     TRANSFORM = remove_exceptions.CommentTopLevelTryBlocks

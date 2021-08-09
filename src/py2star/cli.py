@@ -8,6 +8,7 @@ import tokenize
 from lib2to3 import refactor
 from typing import Optional, Pattern
 
+import ipdb
 import lib3to6 as three2six
 import libcst
 from lib3to6 import common as three2six_common
@@ -360,4 +361,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        ipdb.post_mortem(exc.__traceback__)

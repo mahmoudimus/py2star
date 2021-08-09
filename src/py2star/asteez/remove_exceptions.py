@@ -1,3 +1,5 @@
+import functools
+import itertools
 import typing
 from typing import Union
 import warnings
@@ -8,6 +10,7 @@ from libcst import (
     BaseSmallStatement,
     BaseStatement,
     Call,
+    ConcatenatedString,
     FlattenSentinel,
     Raise,
     RemovalSentinel,
@@ -260,37 +263,82 @@ class RewriteImplicitStringConcat(codemod.ContextAwareTransformer):
     a = (" " +
     " ")
     """
+
     METADATA_DEPENDENCIES = (ParentNodeProvider,)
 
     def leave_ConcatenatedString(
         self, original: "ConcatenatedString", updated: "ConcatenatedString"
     ) -> "BaseExpression":
 
-        left = updated.left
-        right = updated.right
+        # We want to avoid replacing the leaf nodes because there might
+        # be a logic error if it's a multi-line string:
+        #
+        #    a = ("foo"
+        #        "boo"
+        #        "zoo")
+        #
+        #    should be transformed to:
+        #
+        #    a = ("foo" +
+        #        "boo" +
+        #        "zoo")
+        #
+        # but it will fail if we only replace the leaf node (i.e.:
+        #
+        #
+        #    a = "foo"   <--- logic error!
+        #        ("boo" +
+        #        "zoo")
+        #
+        # so we have to find the parent node first, then traverse down
+        # the tree and replace all ConcatenatedString with the binary
+        # operations ("foo" + "boo" + "zoo"), etc.
+        parent = self.get_metadata(ParentNodeProvider, original)
+        if isinstance(parent, (cst.ConcatenatedString,)):
+            return updated  # it's not the parent node, so return.
+
+        # ok this is the parent node.
         ws_between = updated.whitespace_between
+        curr = updated
 
-        # ctx = original
-        # current = cst.BinaryOperation(
-        #     left=ctx.left,
-        #     operator=cst.Add(whitespace_after=ctx.whitespace_between),
-        #     right=ctx.right,
-        # )
-        # while isinstance(ctx, (cst.ConcatenatedString,)):
-        #     ctx = self.get_metadata(ParentNodeProvider, ctx)
-        #
-        #
-        # node = ctx.deep_replace(ctx, current)
-        # return node
-        # print(cst.parse_module("").code_for_node(node))
+        # take the left most string
+        # z = [curr.left]
+        z = []
+        # and traverse the right node creating binary operations
+        while (
+            curr is not None
+            and hasattr(curr, "right")
+            and isinstance(curr.right, (cst.ConcatenatedString,))
+        ):
+            z.append(curr.left)
+            curr = curr.right
+        z.append(curr.left)
+        z = z[::-1]
 
-        return updated.deep_replace(
-            updated,
-            cst.BinaryOperation(
+        node = functools.reduce(
+            lambda right, left: cst.BinaryOperation(
                 left=left,
                 operator=cst.Add(whitespace_after=ws_between),
                 right=right,
-            )
+            ),
+            z,
+            curr.right,
+        )
+        return node.with_changes(
+            lpar=[
+                cst.LeftParen(
+                    whitespace_after=cst.SimpleWhitespace(
+                        value="",
+                    ),
+                ),
+            ],
+            rpar=[
+                cst.RightParen(
+                    whitespace_before=cst.SimpleWhitespace(
+                        value="",
+                    ),
+                ),
+            ],
         )
 
 
@@ -478,6 +526,19 @@ class RemoveExceptions(codemod.ContextAwareTransformer):
         self._update_parent = True
         return cst.FlattenSentinel([cst.Return(value=exc)])
 
+    def _on_exc_attribute(
+        self,
+        original_node: "Raise",
+        updated_node: "Raise",
+    ) -> Union[
+        "BaseSmallStatement",
+        FlattenSentinel["BaseSmallStatement"],
+        RemovalSentinel,
+    ]:
+        exc = ensure_type(updated_node.exc, cst.Attribute)
+        self._update_parent = True
+        return cst.FlattenSentinel([cst.Return(value=exc)])
+
     # @m.call_if_inside(m.Raise(exc=m.Call()))
     def leave_Raise(
         self, original_node: "Raise", updated_node: "Raise"
@@ -489,8 +550,11 @@ class RemoveExceptions(codemod.ContextAwareTransformer):
         if m.matches(updated_node, m.Raise(exc=m.Name())):
             return self._on_exc_name(original_node, updated_node)
 
+        if m.matches(updated_node, m.Raise(exc=m.Attribute())):
+            return self._on_exc_attribute(original_node, updated_node)
+
         if m.matches(updated_node, m.Raise(exc=None)):
-            # just naked raise, just repalce w/ return
+            # just naked raise, just replace w/ return
             return cst.FlattenSentinel([cst.Return(value=None)])
 
         assert m.matches(updated_node, m.Raise(exc=m.Call()))

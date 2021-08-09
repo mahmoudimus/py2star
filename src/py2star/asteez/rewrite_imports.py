@@ -297,6 +297,9 @@ class RewriteImports(codemod.ContextAwareTransformer):
                 # import a.b.c => load("@{ns}//a/b", c="c")
                 import_name = f'"{name.attr.value}"'
                 import_as = f"{name.attr.value}"
+            elif type(name) == cst.Attribute and type(name.value) == cst.Name:
+                import_name = f'"{name.attr.value}"'
+                import_as = f"{name.attr.value}"
             else:
                 import_name = f'"{name.value}"'
                 import_as = f"{name.value}"
