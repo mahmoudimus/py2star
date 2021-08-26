@@ -37,9 +37,7 @@ def find_unused_imports(wrapper: cst.MetadataWrapper, warn_on_unused=False):
         log = logger.warning
 
     scopes = set(wrapper.resolve(cst.metadata.ScopeProvider).values())
-    unused_imports: Dict[
-        Union[cst.Import, cst.ImportFrom], Set[str]
-    ] = defaultdict(set)
+    unused_imports: Dict[Union[cst.Import, cst.ImportFrom], Set[str]] = defaultdict(set)
     undefined_references: Dict[cst.CSTNode, Set[str]] = defaultdict(set)
     ranges = wrapper.resolve(cst.metadata.PositionProvider)
     for scope in scopes:
@@ -99,9 +97,7 @@ class RemoveUnusedImports(cst.CSTTransformer):
             else:
                 name_value = name.name.value
             if name_value not in self.unused_imports[original_node]:
-                names_to_keep.append(
-                    name.with_changes(comma=cst.MaybeSentinel.DEFAULT)
-                )
+                names_to_keep.append(name.with_changes(comma=cst.MaybeSentinel.DEFAULT))
         if len(names_to_keep) == 0:
             return cst.RemoveFromParent()
         else:
@@ -180,9 +176,7 @@ class RewriteImports(codemod.ContextAwareTransformer):
         self,
         original_node: Union[cst.Import, cst.ImportFrom],
         updated_node: Union[cst.Import, cst.ImportFrom],
-    ) -> Union[
-        cst.Import, cst.ImportFrom, cst.RemovalSentinel, cst.FlattenSentinel
-    ]:
+    ) -> Union[cst.Import, cst.ImportFrom, cst.RemovalSentinel, cst.FlattenSentinel]:
         # pp {qname.name
         #     for qnames in self.metadata[FullyQualifiedNameProvider].values()
         #     for qname in qnames
@@ -290,10 +284,7 @@ class RewriteImports(codemod.ContextAwareTransformer):
             if node_name.asname:
                 name = node_name.asname.name
 
-            if (
-                type(name) == cst.Attribute
-                and type(name.value) == cst.Attribute
-            ):
+            if type(name) == cst.Attribute and type(name.value) == cst.Attribute:
                 # import a.b.c => load("@{ns}//a/b", c="c")
                 import_name = f'"{name.attr.value}"'
                 import_as = f"{name.attr.value}"
@@ -353,18 +344,14 @@ class RemoveDelKeyword(codemod.ContextAwareTransformer):
         self,
         original_node: "SimpleStatementLine",
         updated_node: "SimpleStatementLine",
-    ) -> Union[
-        "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
-    ]:
+    ) -> Union["BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel]:
         # del self.xxxx
         _attr = m.Del(
             target=m.Tuple(
                 elements=[
                     m.AtLeastN(
                         n=1,
-                        matcher=m.Element(
-                            value=m.Attribute(value=m.DoNotCare())
-                        ),
+                        matcher=m.Element(value=m.Attribute(value=m.DoNotCare())),
                     )
                 ]
             )
@@ -422,9 +409,7 @@ class LarkyImportSorter(codemod.ContextAwareTransformer):
 
     def process_node(
         self,
-        node: Union[
-            cst.FunctionDef, cst.ClassDef, cst.BaseAssignTargetExpression
-        ],
+        node: Union[cst.FunctionDef, cst.ClassDef, cst.BaseAssignTargetExpression],
         name: str,
     ) -> None:
         scope = self.get_metadata(cst.metadata.ScopeProvider, node)
@@ -478,18 +463,18 @@ class LarkyImportSorter(codemod.ContextAwareTransformer):
                 )
                 break
 
+        # if we do not actually have any imports, just return
+        if not body:
+            return updated_node
+
         # check for leading lines (empty lines or comments) before
         # the next item in the body and move it above
         first_item = body[-len(self.names)]
+
         # copy the leading lines from the next statement
         # and put it on the last body item
-        if (
-            m.matches(statement, m.SimpleStatementLine())
-            and statement.leading_lines
-        ):
-            first_item = first_item.with_changes(
-                leading_lines=statement.leading_lines
-            )
+        if m.matches(statement, m.SimpleStatementLine()) and statement.leading_lines:
+            first_item = first_item.with_changes(leading_lines=statement.leading_lines)
             statement = statement.with_changes(leading_lines=[cst.EmptyLine()])
             body[-len(self.names)] = first_item
         body.append(statement)
