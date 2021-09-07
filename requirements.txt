@@ -3,4 +3,5 @@ future==0.18.2
 lib3to6==202101.1045
 docformatter==1.4
 libcst==0.3.19
+ipdb==0.13.9
 importanize@git+git://github.com/miki725/importanize.git@master#egg=importanize

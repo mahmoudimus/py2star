@@ -3,7 +3,16 @@ Converts python files to starlark files
 
 ## Get started quickly
 
+#### Setup
 ```bash
+python -m venv venv
+source venv/bin/activate
+python setup.py install
+```
+
+#### Run
+```bash
+cd src/py2star
 python cli.py larkify ~/src/pycryptodome/lib/Crypto/SelfTest/PublicKey/test_RSA.py > test_RSA.star
 python cli.py tests test_RSA.star >> test_RSA.star
 ```
