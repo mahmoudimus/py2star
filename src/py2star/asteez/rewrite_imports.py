@@ -382,6 +382,16 @@ class RemoveDelKeyword(codemod.ContextAwareTransformer):
             # operator.delitem(a, b, /)
             # Same as del a[b].
             AddImportsVisitor.add_needed_import(self.context, "operator")
+            subscript = updated_node.body[0].target.slice[0].slice
+            value = getattr(subscript, "value", None)
+            if not value and isinstance(subscript, cst.Slice):
+                value = cst.parse_expression(
+                    "slice(" +
+                        subscript.lower.value + 
+                        "," +
+                        subscript.upper.value +
+                        ("," + subscript.step.value if subscript.step else "") +
+                        ")")
             un = updated_node.deep_replace(
                 updated_node,
                 cst.helpers.parse_template_statement(
@@ -390,7 +400,7 @@ class RemoveDelKeyword(codemod.ContextAwareTransformer):
                     config=self.module.config_for_parsing,
                     value=updated_node.body[0].target.value,
                     # attr=updated_node.target.value.attr,
-                    slice=updated_node.body[0].target.slice[0].slice.value,
+                    slice=value,
                 ),
             )
             return un
