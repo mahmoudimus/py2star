@@ -167,9 +167,7 @@ def _lib3to6(filename, source_text, install_requires=None, mode="enabled"):
 
     ctx = three2six_common.BuildContext(cfg, filename)
     try:
-        fixed_source_text = three2six.transpile.transpile_module(
-            ctx, source_text
-        )
+        fixed_source_text = three2six.transpile.transpile_module(ctx, source_text)
     except three2six_common.CheckError as err:
         loc = filename
         if err.lineno >= 0:
@@ -229,9 +227,7 @@ def larkify(filename, args):
         transformers += [
             # only rewrite asserts in non-test contexts?
             remove_exceptions.AssertStatementRewriter(context),
-            rewrite_class.ClassToFunctionRewriter(
-                context, remove_decorators=False
-            ),
+            rewrite_class.ClassToFunctionRewriter(context, remove_decorators=False),
         ]
     for t in transformers:
         logger.debug("running transformer: %s", t)
@@ -308,9 +304,7 @@ def main():
     base = argparse.ArgumentParser(add_help=False)
 
     # subcommand 1 -- function commands
-    defs = subparsers.add_parser(
-        "defs", help="function definitions", parents=[base]
-    )
+    defs = subparsers.add_parser("defs", help="function definitions", parents=[base])
     defs.add_argument("filename")
 
     # subcommand 2 -- tests command
@@ -343,13 +337,10 @@ def main():
         help="larkify",
         parents=[base],
     )
+    # larkify.add_argument("filename", type=argparse.FileType("r"), default="-")
     larkify.add_argument("filename")
-    larkify.add_argument(
-        "--fixers", default=[], required=False, action="append"
-    )
-    larkify.add_argument(
-        "--asteez", default=[], required=False, action="append"
-    )
+    larkify.add_argument("--fixers", default=[], required=False, action="append")
+    larkify.add_argument("--asteez", default=[], required=False, action="append")
     larkify.add_argument(
         "-for-tests", "-t", default=False, action="store_true", help="for tests"
     )
