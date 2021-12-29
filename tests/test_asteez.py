@@ -332,6 +332,7 @@ class TestSubMethodsWithLibraryCallsInstead(MetadataResolvingCodemodTest):
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
 
+    @unittest.skip("not needed anymore, just use .decode() on bytes")
     def test_convert_dotdecode_to_codecsdotdecode(self):
         before = """
         long_to_base64(self.prepared_key.n).decode('ASCII'),
@@ -452,7 +453,11 @@ class TestRewriteExceptions(MetadataResolvingCodemodTest):
         mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
 
         self.assertCodemod(
-            before, after, context_override=CodemodContext(wrapper=mod)
+            before,
+            after,
+            context_override=CodemodContext(
+                wrapper=mod, scratch={"config": {"use_error_not_fail": True}}
+            ),
         )
 
     def test_map_raise_statement_with_func(self):
@@ -526,7 +531,46 @@ class TestRewriteExceptions(MetadataResolvingCodemodTest):
         )
         mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
         self.assertCodemod(
-            before, after, context_override=CodemodContext(wrapper=mod)
+            before,
+            after,
+            context_override=CodemodContext(
+                wrapper=mod, scratch={"config": {"use_error_not_fail": True}}
+            ),
+        )
+
+    def test_raise_concatenatedstring_use_fail_not_error(self):
+        before = """
+        # Section 5.3 of NIST SP 800 38B and Appendix B
+        if bs == 8:
+            const_Rb = 0x1B
+            self._max_size = 8 * (2 ** 21)
+        elif bs == 16:
+            const_Rb = 0x87
+            self._max_size = 16 * (2 ** 48)
+        else:
+            raise TypeError("CMAC requires a cipher with a block size"
+                            " of 8 or 16 bytes, not %d" % bs)
+        """
+        after = """
+        # Section 5.3 of NIST SP 800 38B and Appendix B
+        if bs == 8:
+            const_Rb = 0x1B
+            self._max_size = 8 * (2 ** 21)
+        elif bs == 16:
+            const_Rb = 0x87
+            self._max_size = 16 * (2 ** 48)
+        else:
+            fail("TypeError: " + "CMAC requires a cipher with a block size"
+                            " of 8 or 16 bytes, not %d" % bs)
+        """
+        mod = cst.MetadataWrapper(
+            cst.parse_module(self.make_fixture_data(before))
+        )
+        mod.resolve_many(self.TRANSFORM.METADATA_DEPENDENCIES)
+        self.assertCodemod(
+            before,
+            after,
+            context_override=CodemodContext(wrapper=mod),
         )
 
     @unittest.skip(
@@ -591,7 +635,7 @@ def foo(a, b, c):
     # rewritten = c2frw.transform_module(tree)
     expected = """
 def foo(a, b, c):
-    if types.is_instance({}, dict):
+    if builtins.isinstance({}, dict):
         return "hello"
     elif types.is_callable(lambda : 1):
         return "what?"

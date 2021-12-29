@@ -71,16 +71,21 @@ class RewriteTypeChecks(codemod.ContextAwareTransformer):
     def leave_Call(
         self, original_node: "Call", updated_node: "Call"
     ) -> "BaseExpression":
+        AddImportsVisitor.add_needed_import(
+            self.context,
+            "larky",
+            "larky",
+        )
         if m.matches(updated_node, m.Call(func=m.Name("isinstance"))):
             AddImportsVisitor.add_needed_import(
                 self.context,
-                "types",
-                "types",
+                "builtins",
+                "builtins",
             )
             # types.is_instance(...)
             #
             return updated_node.with_changes(
-                func=Attribute(value=Name("types"), attr=Name("is_instance"))
+                func=Attribute(value=Name("builtins"), attr=Name("isinstance"))
             )
         elif m.matches(updated_node, m.Call(func=m.Name("callable"))):
             AddImportsVisitor.add_needed_import(

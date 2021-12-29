@@ -200,8 +200,13 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
         m.Call(
             func=m.Attribute(
                 value=m.DoNotCare(),
-                attr=m.OneOf(m.Name(value="encode"), m.Name(value="decode")),
+                attr=m.OneOf(
+                    m.Name(value="encode")
+                    # ignore bytes.decode() since we support that now.
+                    # , m.Name(value="decode")
+                ),
             ),
+            # todo: respect the `aggressive-codecs` cli parameter
             args=m.DoNotCare(),
         )
     )
@@ -232,6 +237,7 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
         )
         return un.deep_replace(un, expr)
 
+    # TODO: I dont' think the below is no longer needed
     @m.call_if_inside(
         m.Call(
             func=m.Attribute(
@@ -598,12 +604,21 @@ class RemoveExceptions(codemod.ContextAwareTransformer):
                     )
                 )
 
-        rval = cst.Call(func=cst.Name(value=f"Error"), args=args2)
+        _config = self.context.scratch.get("config")
+        if _config and _config.get("use_error_not_fail", False):
+            rval = cst.Call(func=cst.Name(value=f"Error"), args=args2)
+            upd = cst.Return(value=rval)
+        else:
+            rval = cst.Call(func=cst.Name(value=f"fail"), args=args2)
+            upd = cst.Expr(value=rval)
+            # upd = cst.SimpleStatementLine(body=[cst.Expr(value=rval)])
+
         AddImportsVisitor.add_needed_import(
             self.context, "option.result", "Error"
         )
-        upd = cst.Return(value=rval)
+
         return cst.FlattenSentinel([upd])
+        # return cst.FlattenSentinel([upd])
 
         # return Result.Error("JWKError: " + args)
 

@@ -1,12 +1,42 @@
  # Roadmap
 
-### string formatting
+### String Formatting
 
 - `return "".join(["%02x" % bord(x) for x in self.digest()])` "%02x" is not supported :(
 - `larky.strings.zfill`
 - `if not (4 <= cost) and (cost <= 31)` => `if not ((4 <= cost) and (cost <= 31))`
 - `int(b'1', 2)`
 
+## Error Parameters
+
+The following:
+
+```python
+raise Exception(
+    "Ambiguous reference URI {} resolved to {} nodes".format(
+        uri, len(results)
+    )
+)
+```
+
+gets converted to:
+```python
+return Error()
+```
+
+But should definitely be either:
+
+```python
+fail("Ambiguous reference URI {} resolved to {} nodes"
+    .format(uri, len(results)))
+```
+
+*OR*
+
+```python
+return Error("Ambiguous reference URI {} resolved to {} nodes"
+    .format(uri, len(results))).unwrap()
+```
 
 ### imports     
 
@@ -152,6 +182,17 @@ More transform desugaring ideas here:
 - [x] Rewrite lib2to3 fixers to libcst
   - [x] Particularly the test generation stuff should be easy to port tests
 
+
+### cannot use load!
+```1123 08:55:57.695 ERROR: stdlib/xml/dom/xmlbuilder.star:405:10: syntax error at 'load': expected identifier after dot```
+
+### [:] doesn't work
+```
+self.childNodes[:] = L
+  =>  self.childNodes.clear()
+      self.childNodes.extend(L)
+```
+
 ## Ideas
 
 ```python
@@ -161,3 +202,5 @@ class Algo:
 ```
 
 should just be migrated to a module called `Algo` with globals of x and y
+
+
