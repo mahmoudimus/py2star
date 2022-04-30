@@ -3,7 +3,7 @@ import itertools
 import typing
 
 import libcst as cst
-from libcst import codemod
+from libcst import codemod, ensure_type
 from libcst import matchers as m
 from libcst.codemod import CodemodContext
 from libcst.metadata import ScopeProvider, ClassScope
@@ -54,9 +54,14 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         self.namespace_defs = namespace_defs
         self.remove_decorators = remove_decorators
         self.use_mutablestruct = use_mutablestruct
-        self.parent_class = None
-        self.init_params = None
-        self.ns = []
+        self.stack = []
+        # self.parent_class = None
+        # self.init_params = None
+        # self.ns = []
+
+    @property
+    def parent_class(self):
+        return self.stack[-1]["parent_class"] if self.stack else None
 
     @property
     def class_name(self):
@@ -64,10 +69,38 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             return
         return self.parent_class.name.value
 
+    @property
+    def class_bases(self):
+        if not self.parent_class:
+            return ()
+        return self.parent_class.bases
+
+    @property
+    def class_kwds(self):
+        if not self.parent_class:
+            return {}
+        return self.parent_class.keywords
+
+    @property
+    def ns(self):
+        return self.stack[-1]["ns"] if self.stack else None
+
+    @property
+    def init_params(self):
+        return self.stack[-1]["init_params"] if self.stack else None
+
+    @init_params.setter
+    def init_params(self, val):
+        self.stack[-1]["init_params"] = val
+
     def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
-        self.parent_class = node
-        self.init_params = None
-        self.ns = []
+        self.stack.append(
+            {
+                "parent_class": node,
+                "init_params": None,
+                "ns": [],
+            }
+        )
         return True
 
     def leave_Assign(
@@ -381,9 +414,6 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         else:
             body = self.create_dynamic_class(updated_node)
         # must clear out the parent class for future runs
-        self.parent_class = None
-        self.init_params = None
-        self.ns.clear()
         new_name = updated_node.name.value
         if not self.use_mutablestruct:
             new_name = "_class_" + new_name
@@ -395,6 +425,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                 body=body,
             ),
         )
+        self.stack.pop()
         if self.use_mutablestruct:
             return result
         return cst.FlattenSentinel(
@@ -433,12 +464,11 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                             _template.format(
                                 self.class_name,
                                 ",".join(
-                                    b.value.value
-                                    for b in self.parent_class.bases
+                                    self._base(b) for b in self.class_bases
                                 ),
                                 ",".join(
                                     f"{k.value.value}={k.keyword.value}"
-                                    for k in self.parent_class.keywords
+                                    for k in self.class_kwds
                                 ),
                             )
                         ),
@@ -495,6 +525,18 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                 p = p.with_deep_changes(p, star=None)
             updated.append(p)
         return cst.Parameters(updated)
+
+    def _base(self, b):
+        if m.matches(b.value, m.Attribute()):
+            parent = ensure_type(
+                ensure_type(b.value, cst.Attribute).value, cst.Name
+            ).value
+            sub = ensure_type(
+                ensure_type(b.value, cst.Attribute).attr, cst.Name
+            ).value
+            return f"{parent}.{sub}"
+        else:
+            return cst.ensure_type(b.value, cst.Name).value
 
 
 class PrefixMethodByClsName(codemod.ContextAwareTransformer):
