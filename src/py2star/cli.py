@@ -203,7 +203,15 @@ def larkify(filename, args):
         remove_exceptions.SwapByteStringPrefixes(context),
         remove_exceptions.SubMethodsWithLibraryCallsInstead(context),
         remove_exceptions.UnpackTargetAssignments(context),
-        remove_exceptions.DesugarDecorators(context),
+        remove_exceptions.DesugarDecorators(
+            context,
+            exclude_decorators=(
+                "staticmethod",
+                "classmethod",
+            )
+            if args.use_mutablestruct
+            else None,
+        ),
         remove_exceptions.DesugarBuiltinOperators(context),
         remove_exceptions.DesugarSetSyntax(context),
         remove_exceptions.CommentTopLevelTryBlocks(context),
@@ -231,7 +239,9 @@ def larkify(filename, args):
             # only rewrite asserts in non-test contexts?
             remove_exceptions.AssertStatementRewriter(context),
             rewrite_class.ClassToFunctionRewriter(
-                context, remove_decorators=False
+                context,
+                remove_decorators=False,
+                use_mutablestruct=args.use_mutablestruct,
             ),
         ]
     for t in transformers:
@@ -360,6 +370,12 @@ def main():
         action="store_true",
         default=False,
         help="Rewrites exceptions to use the Error module instead of fail",
+    )
+    larkify.add_argument(
+        "--use-mutablestruct",
+        action="store_true",
+        default=False,
+        help="Uses mutablestruct instead of types.new_class for class translation",
     )
     larkify.add_argument(
         "-for-tests", "-t", default=False, action="store_true", help="for tests"

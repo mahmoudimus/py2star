@@ -235,7 +235,14 @@ class TestDesugarDecorators(CodemodTest):
             return True
         foo = decorator(foo)
         """
-        self.assertCodemod(before, after)
+        self.assertCodemod(
+            before,
+            after,
+            exclude_decorators=(
+                "staticmethod",
+                "classmethod",
+            ),
+        )
 
     def test_de_decorate_function_with_arguments(self):
         before = """
@@ -647,6 +654,47 @@ def foo(a, b, c):
 class TestClassRewriting(MetadataResolvingCodemodTest):
     TRANSFORM = rewrite_class.ClassToFunctionRewriter
 
+    def test_class_to_dynamic_class_creation(self):
+        before = """
+        class Foo(object):
+            S = []
+            def __init__(self, foo, value):
+                self.foo = foo
+                self.value = value
+        
+            @staticmethod
+            def f():
+                return True
+        
+            @classmethod
+            def cm(cls):
+                return cls
+        """
+        after = """
+        def _class_Foo():
+            S = []
+            def __init__(self, foo, value):
+                self.foo = foo
+                self.value = value
+        
+            @staticmethod
+            def f():
+                return True
+        
+            @classmethod
+            def cm(cls):
+                return cls
+            __ns = {
+                'S': S,
+                '__init__': __init__,
+                'f': f,
+                'cm': cm,
+            }
+            return types.new_class('Foo', (object), {}, lambda x: x.update(__ns))
+        Foo = _class_Foo()
+        """
+        self.assertCodemod(before, after, use_mutablestruct=False)
+
     def test_delete_kwarg_in_constructors(self):
         before = """
         class Element:
@@ -678,7 +726,7 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
             self = __init__(tag, attrib, extra)
             return self
         """
-        self.assertCodemod(before, after)
+        self.assertCodemod(before, after, use_mutablestruct=True)
 
     @unittest.skip("THIS TEST WORKS BUT RUNNING THIS FAILS ON REAL CODE")
     def test_delete_stararg_in_constructors(self):
@@ -762,7 +810,9 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
             self.doit = doit
             return self
             """
-        self.assertCodemod(before, after, remove_decorators=True)
+        self.assertCodemod(
+            before, after, remove_decorators=True, use_mutablestruct=True
+        )
 
 
 def _remove_empty_lines(mystr):

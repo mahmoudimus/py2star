@@ -6,12 +6,16 @@ import libcst as cst
 from libcst import codemod
 from libcst import matchers as m
 from libcst.codemod import CodemodContext
+from libcst.metadata import ScopeProvider, ClassScope
 
 
 # class ClassToFunctionRewriter(cst.CSTTransformer):
+
+
 class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
 
     DESCRIPTION = "Rewrites classes to functions"
+    METADATA_DEPENDENCIES = (ScopeProvider,)
 
     @staticmethod
     def add_args(arg_parser: argparse.ArgumentParser) -> None:
@@ -31,15 +35,28 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             default=False,
             action="store_true",
         )
+        arg_parser.add_argument(
+            "--use-mutablestruct",
+            dest="use_mutablestruct",
+            help="Uses mutablestruct instead of types.new_class for class translation",
+            default=False,
+            action="store_true",
+        )
 
     def __init__(
-        self, context, namespace_defs=False, remove_decorators=False
+        self,
+        context,
+        namespace_defs=False,
+        remove_decorators=False,
+        use_mutablestruct=False,
     ) -> None:
         super(ClassToFunctionRewriter, self).__init__(context)
         self.namespace_defs = namespace_defs
         self.remove_decorators = remove_decorators
+        self.use_mutablestruct = use_mutablestruct
         self.parent_class = None
         self.init_params = None
+        self.ns = []
 
     @property
     def class_name(self):
@@ -49,7 +66,22 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
 
     def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
         self.parent_class = node
+        self.init_params = None
+        self.ns = []
         return True
+
+    def leave_Assign(
+        self, original_node: cst.Assign, updated_node: cst.Assign
+    ) -> typing.Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel[cst.BaseStatement],
+        cst.RemovalSentinel,
+    ]:
+        scope = self.get_metadata(ScopeProvider, original_node)
+        if isinstance(scope, ClassScope):
+            for t in original_node.targets:
+                self.ns.append(t.target.value)
+        return updated_node
 
     def leave_FunctionDef(
         self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
@@ -60,6 +92,61 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
     ]:
         if not self.class_name:
             return updated_node
+        if self.use_mutablestruct:
+            return self.with_mutablestruct(original_node, updated_node)
+        # Ok, we are using types so:
+        #
+        # class Foo(object):
+        #     S = []
+        #
+        #     def __init__(self, foo, value):
+        #         self.foo = foo
+        #         self.value = value
+        #
+        #     @staticmethod
+        #     def f():
+        #         return True
+        #
+        #     @classmethod
+        #     def cm(cls):
+        #         return cls
+        #
+        # Becomes to:
+        #
+        # def _class_Foo():
+        #     S = []
+        #
+        #     def __init__(self, foo, value):
+        #         self.foo = foo
+        #         self.value = value
+        #
+        #     def f():
+        #         return True
+        #     f = staticmethod(f)
+        #
+        #     def cm(cls):
+        #         return cls
+        #     cm = classmethod(cm)
+        #
+        #     __ns = {
+        #         '__init__': __init__,
+        #         'f': f,
+        #         'cm': cm,
+        #         'S': S
+        #     }
+        #     return types.new_class('Foo', (object,), {}, lambda x: x.update(__ns))
+        # Foo = _class_Foo()
+
+        self.ns.append(updated_node.name.value)
+        return updated_node
+
+    def with_mutablestruct(
+        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
+    ) -> typing.Union[
+        cst.BaseStatement,
+        cst.FlattenSentinel[cst.BaseStatement],
+        cst.RemovalSentinel,
+    ]:
         # remove self from all functions
         # (IMPORTANT! Run self stripper FIRST to set functions w/o self so
         #  rewriting can use selfless parameters when manually setting
@@ -289,16 +376,81 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         # params = params.deep_replace(
         #     params, params.with_changes(star_arg=cst.MaybeSentinel.DEFAULT)
         # )
-        body = self.append_return_self_to_body(updated_node)
+        if self.use_mutablestruct:
+            body = self.append_return_self_to_body(updated_node)
+        else:
+            body = self.create_dynamic_class(updated_node)
         # must clear out the parent class for future runs
         self.parent_class = None
-        return updated_node.deep_replace(
+        self.init_params = None
+        self.ns.clear()
+        new_name = updated_node.name.value
+        if not self.use_mutablestruct:
+            new_name = "_class_" + new_name
+        result = updated_node.deep_replace(
             updated_node,
             cst.FunctionDef(
-                name=updated_node.name,
+                name=cst.Name(value=new_name),
                 params=params,
                 body=body,
             ),
+        )
+        if self.use_mutablestruct:
+            return result
+        return cst.FlattenSentinel(
+            [
+                result,
+                cst.parse_statement(
+                    f"{original_node.name.value} = {new_name}()"
+                ),
+            ]
+        )
+
+    def create_dynamic_class(self, updated_node):
+        _template = (
+            "types.new_class('{0}', ({1}), {{{2}}}, lambda x: x.update(__ns))"
+        )
+        block: cst.IndentedBlock = updated_node.body
+
+        new_body = list(block.body)
+        new_body.append(
+            #     __ns = {
+            #         '__init__': __init__,
+            #         'f': f,
+            #         'cm': cm
+            #     }
+            cst.parse_statement(
+                "__ns = {\n"
+                + "".join(f"    '{n}': {n},\n" for n in self.ns)
+                + "}"
+            )
+        )
+        new_body.append(
+            cst.SimpleStatementLine(
+                body=[
+                    cst.Return(
+                        value=cst.parse_expression(
+                            _template.format(
+                                self.class_name,
+                                ",".join(
+                                    b.value.value
+                                    for b in self.parent_class.bases
+                                ),
+                                ",".join(
+                                    f"{k.value.value}={k.keyword.value}"
+                                    for k in self.parent_class.keywords
+                                ),
+                            )
+                        ),
+                        whitespace_after_return=cst.SimpleWhitespace(value=" "),
+                    ),
+                ]
+            )
+        )
+        return cst.IndentedBlock(
+            body=new_body,
+            footer=block.footer,
+            header=block.header,
         )
 
     @staticmethod

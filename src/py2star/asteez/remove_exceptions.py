@@ -39,16 +39,9 @@ class DesugarDecorators(codemod.ContextAwareTransformer):
 
     """
 
-    EXCLUDED = (
-        "staticmethod",
-        "classmethod",
-    )
-
     def __init__(self, context, exclude_decorators=None, noop=False) -> None:
         super(DesugarDecorators, self).__init__(context)
-        self.excluded = (
-            exclude_decorators if exclude_decorators else self.EXCLUDED
-        )
+        self.excluded = exclude_decorators if exclude_decorators else []
         self.noop = noop
 
     @m.call_if_inside(m.ClassDef(decorators=[m.AtLeastN(n=1)]))
