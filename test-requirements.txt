@@ -1,4 +1,4 @@
-pytest==6.2.2
+pytest>=7
 ipython==7.21.0
 ipdb==0.13.7
 # python debugging tools have gotten so much better @_@

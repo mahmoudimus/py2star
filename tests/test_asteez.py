@@ -1,12 +1,11 @@
-import io
 import logging
 import unittest
 
-import astunparse
 import libcst as cst
 import pytest
 from libcst.codemod import CodemodContext, CodemodTest
 from py2star.asteez import (
+    desugar,
     functionz,
     remove_exceptions,
     remove_types,
@@ -30,22 +29,29 @@ class MetadataResolvingCodemodTest(CodemodTest):
         return CodemodContext(wrapper=mod)
 
 
-# Fix for https://github.com/simonpercivall/astunparse/issues/43
-class FixedAstunparseUnparser(astunparse.Unparser):
-    def _Constant(self, t):
-        if not hasattr(t, "kind"):
-            setattr(t, "kind", None)
-        super()._Constant(t)
+class TestRemoveFStrings(CodemodTest):
+    TRANSFORM = rewrite_fstring.RemoveFStrings
 
+    def test_fixture(self):
+        with open("tests/data/simple_class.py") as f:
+            code = f.read()
+        tree = cst.parse_module(code)
+        rewritten = tree.visit(self.TRANSFORM(CodemodContext())).code
+        assert 'raise ValueError(("%s, %s, %s" % (key, mode, nonce)))' in rewritten
+        assert 'return ("%s" % (foo,))' in rewritten
 
-def test_remove_fstring(program):
-    rewriter = rewrite_fstring.RemoveFStrings()
-    rewritten = rewriter.visit(program)
-    code = io.StringIO()
-    FixedAstunparseUnparser(rewritten, file=code)
-    code = code.getvalue()
-    assert "raise ValueError(('%s, %s, %s' % (key, mode, nonce)))" in code
-    assert "return ('%s' % (foo,))" in code
+    def test_format_spec_and_escapes(self):
+        before = r"""
+        a = f"{x:>4} {y!r} 100% {{z}}"
+        b = rf'\d{n}'
+        c = f"no fields"
+        """
+        after = r"""
+        a = ("%>4 %r 100%% {z}" % (x, y))
+        b = (r'\d%s' % (n,))
+        c = f"no fields"
+        """
+        self.assertCodemod(before, after)
 
 
 def test_remove_types(source_tree):
@@ -173,7 +179,7 @@ b != False
 
 
 class TestUnpackTargetAssignments(CodemodTest):
-    TRANSFORM = remove_exceptions.UnpackTargetAssignments
+    TRANSFORM = desugar.UnpackTargetAssignments
 
     def test_unpack_target_assignments(self):
         before = """
@@ -221,7 +227,7 @@ class TestUnpackTargetAssignments(CodemodTest):
 
 
 class TestDesugarDecorators(CodemodTest):
-    TRANSFORM = remove_exceptions.DesugarDecorators
+    TRANSFORM = desugar.DesugarDecorators
 
     def test_de_decorate_function(self):
         before = """
@@ -273,7 +279,7 @@ class TestDesugarDecorators(CodemodTest):
 
 
 class TestDesugarBuiltinOperators(CodemodTest):
-    TRANSFORM = remove_exceptions.DesugarBuiltinOperators
+    TRANSFORM = desugar.DesugarBuiltinOperators
 
     def test_desugar_power_operator(self):
         before = """
@@ -303,7 +309,7 @@ class TestDesugarBuiltinOperators(CodemodTest):
 
 
 class TestDesugarSetSyntax(CodemodTest):
-    TRANSFORM = remove_exceptions.DesugarSetSyntax
+    TRANSFORM = desugar.DesugarSetSyntax
 
     def test_set_expression_desugar(self):
         before = """
@@ -325,7 +331,7 @@ class TestDesugarSetSyntax(CodemodTest):
 
 
 class TestSubMethodsWithLibraryCallsInstead(MetadataResolvingCodemodTest):
-    TRANSFORM = remove_exceptions.SubMethodsWithLibraryCallsInstead
+    TRANSFORM = desugar.SubMethodsWithLibraryCallsInstead
 
     def test_convert_dotencode_to_codecsdotencode(self):
         before = """
@@ -366,7 +372,7 @@ class TestSubMethodsWithLibraryCallsInstead(MetadataResolvingCodemodTest):
 
 
 class TestRewriteImplicitStringConcat(MetadataResolvingCodemodTest):
-    TRANSFORM = remove_exceptions.RewriteImplicitStringConcat
+    TRANSFORM = desugar.RewriteImplicitStringConcat
 
     def test_convert_implicit_string_concat(self):
         before = """
@@ -386,23 +392,23 @@ class TestRewriteImplicitStringConcat(MetadataResolvingCodemodTest):
         regex1 = (
             r"pack_into requires a buffer of at least 6 "
             r"bytes for packing 1 bytes at offset 5 "
-            r"\(actual buffer size is 1\)"
+            r"\\(actual buffer size is 1\\)"
         )
         
         regex2 = (
             r"unpack_from requires a buffer of at least 6 "
             r"bytes for unpacking 1 bytes at offset 5 "
-            r"\(actual buffer size is 1\)"
+            r"\\(actual buffer size is 1\\)"
         )
         """
         after = """
         regex1 = (r"pack_into requires a buffer of at least 6 " +
             r"bytes for packing 1 bytes at offset 5 " +
-            r"\(actual buffer size is 1\)")
+            r"\\(actual buffer size is 1\\)")
         
         regex2 = (r"unpack_from requires a buffer of at least 6 " +
             r"bytes for unpacking 1 bytes at offset 5 " +
-            r"\(actual buffer size is 1\)")
+            r"\\(actual buffer size is 1\\)")
         """
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
@@ -868,15 +874,15 @@ class TestAssertStatementRewriter(MetadataResolvingCodemodTest):
 
 class TestSwapByteLiteralPrefix(MetadataResolvingCodemodTest):
 
-    TRANSFORM = remove_exceptions.SwapByteStringPrefixes
+    TRANSFORM = desugar.SwapByteStringPrefixes
 
     def test_simple(self):
         before = """
-        p = re.compile(br'\$2a\$([0-9][0-9])\$([A-Za-z0-9./]{22,22})([A-Za-z0-9./]{31,31})')
+        p = re.compile(br'\\$2a\\$([0-9][0-9])\\$([A-Za-z0-9./]{22,22})([A-Za-z0-9./]{31,31})')
         """
 
         after = """
-        p = re.compile(rb'\$2a\$([0-9][0-9])\$([A-Za-z0-9./]{22,22})([A-Za-z0-9./]{31,31})')
+        p = re.compile(rb'\\$2a\\$([0-9][0-9])\\$([A-Za-z0-9./]{22,22})([A-Za-z0-9./]{31,31})')
         """
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
@@ -1205,7 +1211,7 @@ class TestImportSorting(MetadataResolvingCodemodTest):
 
 class TestDelKeyword(MetadataResolvingCodemodTest):
 
-    TRANSFORM = rewrite_imports.RemoveDelKeyword
+    TRANSFORM = desugar.RemoveDelKeyword
 
     def test_remove_del_keyword(self):
         before = """
@@ -1242,7 +1248,7 @@ class TestDelKeyword(MetadataResolvingCodemodTest):
             ValueError is raised if prefix is reserved or is invalid.
         
             '''
-            if re.match("ns\d+$", prefix):
+            if re.match("ns\\d+$", prefix):
                 raise ValueError("Prefix format reserved for internal use")
             for k, v in list(_namespace_map.items()):
                 if k == uri or v == prefix:
@@ -1286,7 +1292,7 @@ class TestDelKeyword(MetadataResolvingCodemodTest):
             ValueError is raised if prefix is reserved or is invalid.
         
             '''
-            if re.match("ns\d+$", prefix):
+            if re.match("ns\\d+$", prefix):
                 raise ValueError("Prefix format reserved for internal use")
             for k, v in list(_namespace_map.items()):
                 if k == uri or v == prefix:
@@ -1460,3 +1466,23 @@ class TestUnittestAssertMethodsRewriter(MetadataResolvingCodemodTest):
 '''
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
+
+
+@pytest.mark.parametrize(
+    "alias,canonical,args",
+    [
+        ("assertEquals", "assertEqual", "a, b"),
+        ("failUnlessRaises", "assertRaises", "ValueError, f, 1"),
+        ("assertRaisesRegexp", "assertRaisesRegex", 'ValueError, "x.*", f, 1'),
+        ("assertRegexpMatches", "assertRegex", 'text, "x.*"'),
+    ],
+)
+def test_deprecated_assert_aliases(alias, canonical, args):
+    def run(method):
+        code = f"def test_it(self):\n    self.{method}({args})\n"
+        rewriter = rewrite_tests.UnittestAssertMethodsRewriter(CodemodContext())
+        return rewriter.transform_module(cst.parse_module(code)).code
+
+    rewritten = run(alias)
+    assert f"self.{alias}" not in rewritten
+    assert rewritten == run(canonical)

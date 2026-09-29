@@ -1,29 +1,14 @@
 import argparse
-import ast
 import io
 import logging
 import re
 import sys
 import tokenize
-from lib2to3 import refactor
 from typing import Optional, Pattern
 
-import ipdb
-import lib3to6 as three2six
 import libcst
-from lib3to6 import common as three2six_common
-from libcst.codemod import CodemodContext
-from libcst.codemod.visitors import AddImportsVisitor, RemoveImportsVisitor
-from py2star.asteez import (
-    functionz,
-    remove_exceptions,
-    remove_types,
-    rewrite_class,
-    rewrite_comparisons,
-    rewrite_imports,
-    rewrite_loopz,
-    rewrite_tests,
-)
+from py2star import pipeline
+from py2star.asteez import functionz
 from py2star.tokenizers import find_definitions
 from py2star.utils import ReIndenter
 
@@ -75,9 +60,6 @@ def set_log_lvl(args, log_level=None):
 
     if log_level is None:  # Not sure if log_level can be the number 0
         log_level = args.log_level.upper()
-        # make logging less verbose
-        logging.getLogger("lib2to3.main").setLevel(logging.WARN)
-        logging.getLogger("RefactoringTool").setLevel(logging.WARN)
     if isinstance(log_level, str):
         log_level = log_level.upper()  # check to make sure it is upper
         log_level = getattr(logging, log_level)
@@ -133,141 +115,21 @@ def safe_read(filename):
     return out
 
 
-def onfixes(out, fixers, doprint=True):
-    if not fixers:
-        _fixers = refactor.get_fixers_from_package("py2star.fixes")
-    else:
-        _fixers = [
-            i
-            for i in refactor.get_fixers_from_package("py2star.fixes")
-            for x in fixers
-            if i.endswith(x)
-        ]
-
-    # out = _lib3to6(filename, out)
-
-    for f in _fixers:
-        logger.debug("running fixer: %s", f)
-        # if not f.endswith("fix_asserts"):
-        #     continue
-        tool = refactor.RefactoringTool([f])
-        out = tool.refactor_string(out, "simple_class.py")
-        out = str(out)
-    if doprint:
-        print(out)
-    return out
-
-
-def _lib3to6(filename, source_text, install_requires=None, mode="enabled"):
-    cfg = three2six.packaging.eval_build_config(
-        target_version="3.5",
-        install_requires=install_requires,
-        default_mode=mode,
-    )
-
-    ctx = three2six_common.BuildContext(cfg, filename)
-    try:
-        fixed_source_text = three2six.transpile.transpile_module(
-            ctx, source_text
-        )
-    except three2six_common.CheckError as err:
-        loc = filename
-        if err.lineno >= 0:
-            loc += "@" + str(err.lineno)
-
-        err.args = (loc + " - " + err.args[0],) + err.args[1:]
-        raise
-
-    return fixed_source_text
-
-
 def larkify(filename, args):
-    # TODO: select larkifiers dynamically? maybe look into instagram/fixers?
-    fixers = args.fixers
-    out = safe_read(filename)
-    if fixers:
-        doprint = args.log_level.lower() == "debug"
-        out = onfixes(out, fixers, doprint=doprint)
-
-    program = libcst.parse_module(out)
-    wrapper = libcst.MetadataWrapper(program)
-    context = CodemodContext(
-        wrapper=wrapper,
+    options = pipeline.Options(
+        for_tests=args.for_tests,
+        use_mutablestruct=args.use_mutablestruct,
+        use_error_not_fail=args.use_error_not_fail,
+    )
+    program = pipeline.larkify(
+        safe_read(filename),
         filename=filename,
         full_module_name=_full_module_name(args.pkg_path, filename),
-        scratch={"config": {"use_error_not_fail": args.use_error_not_fail}},
+        options=options,
     )
-    transformers = [
-        rewrite_comparisons.RemoveIfNameEqualsMain(context),
-        remove_exceptions.RewriteImplicitStringConcat(context),
-        remove_exceptions.SwapByteStringPrefixes(context),
-        remove_exceptions.SubMethodsWithLibraryCallsInstead(context),
-        remove_exceptions.UnpackTargetAssignments(context),
-        remove_exceptions.DesugarDecorators(
-            context,
-            exclude_decorators=(
-                "staticmethod",
-                "classmethod",
-            )
-            if args.use_mutablestruct
-            else None,
-        ),
-        remove_exceptions.DesugarBuiltinOperators(context),
-        remove_exceptions.DesugarSetSyntax(context),
-        remove_exceptions.CommentTopLevelTryBlocks(context),
-        rewrite_imports.RemoveDelKeyword(context),
-        rewrite_loopz.WhileToForLoop(context),
-        functionz.RewriteTypeChecks(context),
-        functionz.GeneratorToFunction(context),
-        rewrite_comparisons.UnchainComparison(context),
-        rewrite_comparisons.IsComparisonTransformer(context),
-        remove_types.RemoveTypesTransformer(context),
-        remove_exceptions.RemoveExceptions(context),
-    ]
-
-    # must run last otherwise messes up all the other transformers above
-    if args.for_tests:
-        # TODO: can this by dynamic so we don't pass this in?
-        transformers += [
-            rewrite_tests.UnittestAssertMethodsRewriter(context),
-            rewrite_tests.Unittest2Functions(context),
-        ]
-    else:
-        # we don't want class to function rewriter for tests since
-        # there's a special class rewriter for tests
-        transformers += [
-            # only rewrite asserts in non-test contexts?
-            remove_exceptions.AssertStatementRewriter(context),
-            rewrite_class.ClassToFunctionRewriter(
-                context,
-                remove_decorators=False,
-                use_mutablestruct=args.use_mutablestruct,
-            ),
-        ]
-    for t in transformers:
-        logger.debug("running transformer: %s", t)
-        with t.resolve(wrapper):
-            program = t.transform_module(program)
-
-    transformers = [
-        AddImportsVisitor(context),
-        RemoveImportsVisitor(context),
-        rewrite_imports.RewriteImports(context),
-        rewrite_imports.LarkyImportSorter(context),
-    ]
-
-    wrapper = libcst.MetadataWrapper(program)
-    for t in transformers:
-        wrapper.resolve_many(t.get_inherited_dependencies())
-        logger.debug("running transformer: %s", t)
-        with t.resolve(wrapper):
-            program = t.transform_module(program)
-
     print(program.code)
     if args.for_tests:
-        tree = ast.parse(program.code)
-        s = functionz.testsuite_generator(tree)
-        print(s)
+        print(functionz.testsuite_generator(program))
 
 
 DOT_PY: Pattern[str] = re.compile(r"(__init__)?\.py$")
@@ -295,11 +157,9 @@ def execute(args: argparse.Namespace) -> None:
         for definition in gen:
             print(definition.rstrip())
     elif args.command == "tests":
-        tree = ast.parse(open(args.filename).read())
-        s = functionz.testsuite_generator(tree)
-        print(s)
-    elif args.command == "fixers":
-        onfixes(args.filename, fixers=args.fixers)
+        with open(args.filename) as f:
+            tree = libcst.parse_module(f.read())
+        print(functionz.testsuite_generator(tree))
     elif args.command == "larkify":
         larkify(args.filename, args)
 
@@ -332,23 +192,6 @@ def main():
     )
     tests.add_argument("filename")
 
-    # subcommand 3 -- pattern finders
-    fixpattern = subparsers.add_parser(
-        "fixpattern",
-        help="Easily determine PATTERN for a new fix",
-        parents=[base],
-    )
-    fixpattern.add_argument("statement")
-
-    # subcommand 3 -- pattern finders
-    fixers = subparsers.add_parser(
-        "fixers",
-        help="fixer",
-        parents=[base],
-    )
-    fixers.add_argument("filename")
-    fixers.add_argument("--fixers", default=[], required=False, action="append")
-
     larkify = subparsers.add_parser(
         "larkify",
         help="larkify",
@@ -356,15 +199,6 @@ def main():
     )
     # larkify.add_argument("filename", type=argparse.FileType("r"), default="-")
     larkify.add_argument("filename")
-    larkify.add_argument(
-        "--fixers", default=[], required=False, action="append"
-    )
-    larkify.add_argument(
-        "--asteez", default=[], required=False, action="append"
-    )
-    larkify.add_argument(
-        "--aggressive-codecs", action="store_true", default=False
-    )
     larkify.add_argument(
         "--use-error-not-fail",
         action="store_true",
@@ -391,4 +225,8 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        ipdb.post_mortem(exc.__traceback__)
+        try:
+            import ipdb as debugger
+        except ImportError:
+            import pdb as debugger
+        debugger.post_mortem(exc.__traceback__)

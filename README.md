@@ -4,18 +4,23 @@ Converts python files to starlark files
 ## Get started quickly
 
 #### Setup
+
+Requires Python 3.10+.
+
 ```bash
 python -m venv venv
 source venv/bin/activate
-python setup.py install
+pip install -e '.[tests]'
 ```
 
 #### Run
 ```bash
-cd src/py2star
-python cli.py larkify ~/src/pycryptodome/lib/Crypto/SelfTest/PublicKey/test_RSA.py > test_RSA.star
-python cli.py tests test_RSA.star >> test_RSA.star
+py2star larkify path/to/module.py > module.star
+py2star larkify -t ~/src/pycryptodome/lib/Crypto/SelfTest/PublicKey/test_RSA.py > test_RSA.star
 ```
+
+`larkify -t` rewrites `unittest` classes and appends a test suite runner.
+`py2star tests file.star` prints just the runner for an existing file.
 
 ## Differences with Python
 
@@ -57,19 +62,36 @@ The list of differences between Starlark and Python are documented at https://ba
 
 ## Automatic Conversion
 
-* `py2star.fixes.fix_declass` -- de-classes and de-indents a class
+All transformations are [libcst](https://github.com/Instagram/LibCST) passes in `py2star.asteez`, run in order by `py2star.pipeline`.
 
-So, it goes from:
+* `py2star.asteez.rewrite_tests.Unittest2Functions` -- de-classes and de-indents a `unittest.TestCase`
+
+So, `py2star larkify -t` goes from:
 
 ```python
-class Foo(object):
-    def bar(self):
-        return "baz"
+import unittest
+
+
+class Foo(unittest.TestCase):
+    def test_bar(self):
+        self.assertEqual(1, 1)
 ```
 
 To:
 
 ```python
-def bar(self):
-    return "baz"
+load("@stdlib//larky", larky="larky")
+load("@stdlib//unittest", unittest="unittest")
+load("@vendor//asserts", asserts="asserts")
+
+def Foo_test_bar():
+    asserts.assert_that(1).is_equal_to(1)
+
+def _testsuite():
+    _suite = unittest.TestSuite()
+    _suite.addTest(unittest.FunctionTestCase(Foo_test_bar))
+    return _suite
+
+_runner = unittest.TextTestRunner()
+_runner.run(_testsuite())
 ```
