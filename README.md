@@ -22,6 +22,15 @@ py2star larkify -t ~/src/pycryptodome/lib/Crypto/SelfTest/PublicKey/test_RSA.py 
 `larkify -t` rewrites `unittest` classes and appends a test suite runner.
 `py2star tests file.star` prints just the runner for an existing file.
 
+#### Testing against Larky
+
+`tests/e2e/` holds Python programs that are larkified and run in Larky, and
+their output compared with CPython's. They need a JDK and a starlarky build:
+
+```bash
+LARKY_JAR=~/src/starlarky/larky/target/larky-1.0.0-SNAPSHOT-jar-with-dependencies.jar pytest tests/test_larky_e2e.py
+```
+
 ## Differences with Python
 
 The list of differences between Starlark and Python are documented at https://bazel.build site:
@@ -45,20 +54,44 @@ The list of differences between Starlark and Python are documented at https://ba
   
 ### The following Python features are attempted to be automatically converted:
 
-- [ ] most `builtin` functions, most methods.
-- [ ] `set` types  (**WORKAROUND**: use [`sets.star`](https://github.com/verygoodsecurity/starlarky/blob/master/larky/src/main/resources/stdlib/sets.star) instead)
-- [ ]`implicit string concatenation (use explicit + operator)`.
-- [x] Chained comparisons (e.g. 1 < x < 5)`.
-- [x] `class` (see `larky.struct` function). 
-- [x] `import` (see `load` statement).
-- [x] `while`.
-- [x] `generators` and `generator expressions`.
-- [x] `is` and `is not` (use `==`  and `!=` instead, respectively).
-- [x] `raise` (see `fail` for fatal errors).  
-- [ ] `try`, `except`, `finally`. (see `fail` for fatal errors).
-- [ ] `yield`.
-- [ ] `global`, `nonlocal`.
+Items marked *verified* are covered by `tests/e2e/` programs whose Larky
+output matches CPython (see [Testing against Larky](#testing-against-larky)).
 
+- [x] Builtins Starlark lacks: `sum`, `map` (`builtins.*`), `filter` (list comprehension), `dict.fromkeys` (`larky.dicts.fromkeys`), `bytearray(n)`, `str.encode` (`codecs.encode`), `codecs.encode(b, "hex")` (`binascii`). *verified*
+  - Also `issubclass` (`larky.is_subclass`), not yet covered by `tests/e2e/`.
+  - Not yet: `round`, `oct`, `format`, and `%` format flags/widths such as `%02x` (Larky's `.format()` supports no format specs, so `%` is kept).
+- [x] `set` / `frozenset` literals, comprehensions and calls, via [`sets.star`](https://github.com/verygoodsecurity/starlarky/blob/master/larky/src/main/resources/stdlib/sets.star)'s `Set`. *verified*
+- [x] Implicit string concatenation (explicit `+`).
+- [x] f-strings (`%` formatting). *verified*
+- [x] Chained comparisons (e.g. `1 < x < 5`).
+- [x] `class` (see `larky.struct` function). `@property` / `@x.setter` need `--use-mutablestruct` (`larky.property`). *verified*
+- [x] `import` (see `load` statement).
+- [x] `while`, including `while/else`; `for/else`. *verified*
+- [x] generators (collected into a list, so they must be finite) and generator expressions. *verified*
+- [x] `is` and `is not` (use `==`  and `!=` instead, respectively); `type(x) is str` (`types.is_string(x)`). *verified*
+- [x] `raise` (`fail("ExcName: message")`; `--use-error-not-fail` returns `Error(...)`, `--unwrap-errors` returns `Error(...).unwrap()`). *verified*
+- [x] `try`, `except`, `else`, `finally`, via `Result` from `@vendor//option/result` (see below). *verified*
+- [x] `del` (`.pop()`), slice deletion and slice assignment (in place). *verified*
+- [x] `nonlocal` (the variable is kept in a one-element list). *verified*
+- [ ] `global`: module globals are frozen after a Starlark module loads, so `global` is removed and flagged with a `# PY2LARKY:` comment.
+
+#### How `try/except` is translated
+
+The `try` body becomes a nested function, run with
+`Result.Ok(None).map(lambda _: body())`, which catches any error it raises.
+Names the body assigns are passed in and returned, and `return` / `break` /
+`continue` inside it are re-applied afterwards. Each `except` clause matches
+the error message with `Result.error_is`: translated `raise` statements
+produce `"ExcName: message"`, and Larky's own runtime errors are matched for
+common types (`KeyError`, `IndexError`, `ZeroDivisionError`, `ValueError`,
+`AttributeError`, `TypeError`). Limits:
+
+- `except X as e` binds `e` to the message string, not an exception object.
+- An exception class matches only its own name, not subclasses (except
+  `LookupError` and `ArithmeticError`).
+- The `finally` block runs before `return`/`break`/`continue`/`raise`
+  statements in `except` and `else` blocks, but not when a call made from
+  those blocks raises.
 
 ## Automatic Conversion
 

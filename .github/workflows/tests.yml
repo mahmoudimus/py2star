@@ -1,0 +1,59 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e '.[tests]'
+      - run: pytest
+
+  # Larkify tests/e2e/*.py, run the output in Larky and compare it with
+  # CPython's. Larky is built from source: the release binaries cannot load
+  # @stdlib//larky.
+  larky:
+    runs-on: ubuntu-latest
+    env:
+      STARLARKY_REPO: verygoodsecurity/starlarky
+      STARLARKY_REF: v0.16.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # before checking out starlarky: setup.py searches the tree for
+      # requirements.txt, and starlarky has one too
+      - run: pip install -e '.[tests]'
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.STARLARKY_REPO }}
+          ref: ${{ env.STARLARKY_REF }}
+          path: starlarky
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: starlarky/**/pom.xml
+      - name: Build Larky
+        working-directory: starlarky
+        run: mvn -B -q -pl larky -am -DskipTests package
+      - name: Run Larky end-to-end tests
+        env:
+          REQUIRE_LARKY: "1"
+        run: |
+          LARKY_JAR="$(ls "$GITHUB_WORKSPACE"/starlarky/larky/target/larky-*-jar-with-dependencies.jar)"
+          export LARKY_JAR
+          pytest tests/test_larky_e2e.py

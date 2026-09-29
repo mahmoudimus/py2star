@@ -114,16 +114,53 @@ for _while_ in range(WHILE_LOOP_EMULATION_ITERATION):
 class TestGeneratorAndYieldTransformations(CodemodTest):
     TRANSFORM = functionz.GeneratorToFunction
 
-    def test_yield_to_return(self):
+    def test_yield_collects_into_list(self):
         before = """
-        def iter():
+        def iter(xs):
+            \"\"\"doc\"\"\"
             for i in range(10):
+                if i > 5:
+                    return
                 yield i
+            yield from xs
+            yield
         """
         after = """
-        def iter():
+        def iter(xs):
+            \"\"\"doc\"\"\"
+            _yielded = []
             for i in range(10):
-                return i
+                if i > 5:
+                    return _yielded
+                _yielded.append(i)
+            _yielded.extend(xs)
+            _yielded.append(None)
+            return _yielded
+        """
+        self.assertCodemod(before, after)
+
+    def test_yield_expression_left_alone(self):
+        before = """
+        def coro():
+            x = yield 1
+            yield x
+        """
+        self.assertCodemod(before, before)
+
+    def test_nested_generator_is_independent(self):
+        before = """
+        def outer():
+            def inner():
+                yield 1
+            return inner()
+        """
+        after = """
+        def outer():
+            def inner():
+                _yielded = []
+                _yielded.append(1)
+                return _yielded
+            return inner()
         """
         self.assertCodemod(before, after)
 
@@ -497,7 +534,7 @@ class TestRewriteExceptions(MetadataResolvingCodemodTest):
                 err.code = value.code
                 err.position = value.lineno, value.offset
                 # PY2LARKY: pay attention to this!
-                return err
+                fail(str(err))
             
             def close(self):
                 try:
@@ -696,7 +733,7 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
                 'f': f,
                 'cm': cm,
             }
-            return types.new_class('Foo', (object), {}, lambda x: x.update(__ns))
+            return types.new_class('Foo', (object,), {}, lambda x: x.update(__ns))
         Foo = _class_Foo()
         """
         self.assertCodemod(before, after, use_mutablestruct=False)
@@ -1278,7 +1315,7 @@ class TestDelKeyword(MetadataResolvingCodemodTest):
                     # del self.target, self._target
                     pass
             def __delitem__(self, index):
-                operator.delitem(self._children, index)
+                self._children.pop(index)
 
         def register_namespace(prefix, uri):
             '''Register a namespace prefix.
@@ -1296,7 +1333,7 @@ class TestDelKeyword(MetadataResolvingCodemodTest):
                 raise ValueError("Prefix format reserved for internal use")
             for k, v in list(_namespace_map.items()):
                 if k == uri or v == prefix:
-                    operator.delitem(_namespace_map, k)
+                    _namespace_map.pop(k)
             _namespace_map[uri] = prefix
         """
         ctx = self._get_context_override(before)

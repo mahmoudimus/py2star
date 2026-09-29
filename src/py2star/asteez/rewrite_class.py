@@ -6,6 +6,7 @@ import libcst as cst
 from libcst import codemod, ensure_type
 from libcst import matchers as m
 from libcst.codemod import CodemodContext
+from libcst.codemod.visitors import AddImportsVisitor
 from libcst.metadata import ScopeProvider, ClassScope
 
 
@@ -125,6 +126,11 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
     ]:
         if not self.class_name:
             return updated_node
+        if not isinstance(
+            self.get_metadata(ScopeProvider, original_node, None), ClassScope
+        ):
+            # a function nested inside a method, not a method
+            return updated_node
         if self.use_mutablestruct:
             return self.with_mutablestruct(original_node, updated_node)
         # Ok, we are using types so:
@@ -186,7 +192,12 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         #  functions).
         stripper = FunctionParameterStripper(self.context, ["self"])
         updated_node = updated_node.visit(stripper)
+        prop = self._property_kind(updated_node)
         updated_node = updated_node.visit(UndecorateClassMethods(self.context))
+        if prop == "setter":
+            updated_node = updated_node.with_changes(
+                name=cst.Name(f"_set_{updated_node.name.value}")
+            )
 
         # If there's an init, take its params to convert it
         # from:
@@ -222,6 +233,15 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                 prefixer = PrefixMethodByClsName(self.context, self.class_name)
                 updated_node = updated_node.visit(prefixer)
 
+        if prop:
+            # self.x = larky.property(x) / larky.property(x, _set_x)
+            name = original_node.name.value
+            accessors = [name] + ([f"_set_{name}"] if prop == "setter" else [])
+            self_func_assign = cst.parse_statement(
+                f"self.{name} = larky.property({', '.join(accessors)})"
+            )
+            AddImportsVisitor.add_needed_import(self.context, "larky")
+
         results: typing.List[typing.Any] = [before] if before else []
 
         n = updated_node.with_changes(
@@ -233,6 +253,18 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             results.append(self_func_assign)
 
         return cst.FlattenSentinel(results)
+
+    @staticmethod
+    def _property_kind(fn: cst.FunctionDef) -> typing.Optional[str]:
+        for d in fn.decorators:
+            if m.matches(d.decorator, m.Name("property")):
+                return "getter"
+            if m.matches(
+                d.decorator,
+                m.Attribute(value=m.Name(fn.name.value), attr=m.Name("setter")),
+            ):
+                return "setter"
+        return None
 
     @staticmethod
     def _assign_func_to_self(updated_node: cst.FunctionDef):
@@ -438,6 +470,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         )
 
     def create_dynamic_class(self, updated_node):
+        AddImportsVisitor.add_needed_import(self.context, "types")
         _template = (
             "types.new_class('{0}', ({1}), {{{2}}}, lambda x: x.update(__ns))"
         )
@@ -452,7 +485,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             #     }
             cst.parse_statement(
                 "__ns = {\n"
-                + "".join(f"    '{n}': {n},\n" for n in self.ns)
+                + "".join(f"    '{n}': {n},\n" for n in dict.fromkeys(self.ns))
                 + "}"
             )
         )
@@ -463,8 +496,9 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                         value=cst.parse_expression(
                             _template.format(
                                 self.class_name,
-                                ",".join(
-                                    self._base(b) for b in self.class_bases
+                                "".join(
+                                    self._base(b) + ","
+                                    for b in self.class_bases
                                 ),
                                 ",".join(
                                     f"{k.value.value}={k.keyword.value}"
@@ -559,6 +593,10 @@ class PrefixMethodByClsName(codemod.ContextAwareTransformer):
         super(PrefixMethodByClsName, self).__init__(context)
         self.class_name = class_name
         self.excluded = excluded_methods if excluded_methods else ()
+        self.depth = 0
+
+    def visit_FunctionDef(self, node: cst.FunctionDef) -> None:
+        self.depth += 1
 
     def leave_FunctionDef(
         self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
@@ -567,6 +605,10 @@ class PrefixMethodByClsName(codemod.ContextAwareTransformer):
         cst.FlattenSentinel[cst.BaseStatement],
         cst.RemovalSentinel,
     ]:
+        self.depth -= 1
+        if self.depth:
+            # functions nested inside a method keep their names
+            return updated_node
         if updated_node.name.value in self.excluded:
             return updated_node
         if not self.class_name:
