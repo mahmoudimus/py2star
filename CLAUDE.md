@@ -33,8 +33,17 @@ py2star defs file.py                                # list function definitions
 
 `larkify` flags:
 - `-p/--pkg-path`: package root. Without it, relative imports become `@vendor///name` with a warning on stderr.
-- `--use-mutablestruct`: translate classes to `larky.mutablestruct` instead of the default desugaring.
-- `--use-error-not-fail`: rewrite `raise` to the `Error` module instead of `fail()`.
+- `--use-mutablestruct`: translate classes to `larky.mutablestruct` instead of `types.new_class`. Needed for `@property`.
+- `--use-error-not-fail`: `raise` becomes `return Error(...)` instead of `fail(...)`. Raises inside a `try` body always raise.
+- `--unwrap-errors`: `raise` becomes `return Error(...).unwrap()`.
+
+Larky end-to-end tests (`tests/e2e/*.py` run under CPython and, larkified, under Larky; outputs compared) are skipped unless `LARKY_JAR` is set:
+
+```bash
+LARKY_JAR=~/src/starlarky/larky/target/larky-1.0.0-SNAPSHOT-jar-with-dependencies.jar pytest tests/test_larky_e2e.py
+```
+
+Use them to check what Larky actually accepts before relying on it: many Python builtins and syntax are missing, and some stdlib helpers have bugs (e.g. `operator.delitem` always fails for dicts). `tests/larky/RunStar.java` is the launcher; `Larky.main` itself cannot run files that use `load()`.
 
 ## Architecture
 
@@ -42,15 +51,16 @@ py2star defs file.py                                # list function definitions
 
 1. `cli.safe_read` detects the encoding and re-indents with `utils.ReIndenter` (tabs to spaces).
 2. `pipeline.transform_passes()` returns the ordered list of `ContextAwareTransformer`s in `py2star/asteez/`. Order matters:
-   - Desugaring first (`desugar.py`: string concat, byte prefixes, decorators, `**`, set literals, multi-target assignment, `del`), then `while` to bounded `for`, type checks, generators, chained/`is` comparisons, annotation removal, `RemoveExceptions`.
-   - The class rewriter runs last because it restructures the module: `rewrite_class.ClassToFunctionRewriter` normally, or `rewrite_tests.UnittestAssertMethodsRewriter` + `Unittest2Functions` in `-t` mode.
+   - Desugaring first (`desugar.py`: string concat, f-strings, byte prefixes, `str.encode`, decorators, `**`, sets, missing builtins, `del`, slice assignment), then `nonlocal`/`global` (`rewrite_scopes.py`), `while`, type checks, generators, comparisons, annotation removal.
+   - `RemoveExceptions` turns `raise` into `fail`/`Error`, then `TryExceptToResult` turns `try` into `Result` calls; it relies on raises in try bodies already raising. `ForElseToFlag` runs after it because try bodies' `break`s move out.
+   - The class rewriter runs last because it restructures the module: `rewrite_class.ClassToFunctionRewriter` normally, or `rewrite_tests.UnittestAssertMethodsRewriter` + `Unittest2Functions` in `-t` mode. It must ignore functions nested inside methods (including generated `_try_N` helpers).
    - Config reaches transformers through `context.scratch["config"]`.
 3. `pipeline.import_passes()` runs on a fresh `MetadataWrapper`: `AddImportsVisitor` / `RemoveImportsVisitor` apply imports queued by earlier passes (`AddImportsVisitor.add_needed_import`), `RewriteImports` turns `import`s into `load()`, and `LarkyImportSorter` hoists and sorts the loads.
 
-A new transformer does nothing until it is added to `transform_passes()` in the right position. `rewrite_fstring.RemoveFStrings` exists but is not in the pipeline.
+A new transformer does nothing until it is added to `transform_passes()` in the right position. Generated helper names use a leading underscore and a per-module counter (`_try_1`, `_broke_1`, `_lo_s1`); constructs that cannot be translated keep their code and get a `# PY2LARKY:` comment.
 
 Other modules: `larky.py` is a shim that lets `.star` files run under CPython; `tokenizers/` backs the `defs` command.
 
 ## Tests
 
-Most coverage is in `tests/test_asteez.py`, using `libcst.codemod.CodemodTest`: each class sets `TRANSFORM = SomeTransformer` and calls `self.assertCodemod(before, after)` with dedented strings. Transformers with `METADATA_DEPENDENCIES` subclass `MetadataResolvingCodemodTest`. These tests exercise one transformer at a time, not the full pipeline, so check pipeline-level changes by running `py2star larkify` on the files in `tests/data/` before and after.
+Most coverage is in `tests/test_asteez.py`, using `libcst.codemod.CodemodTest`: each class sets `TRANSFORM = SomeTransformer` and calls `self.assertCodemod(before, after)` with dedented strings. Transformers with `METADATA_DEPENDENCIES` subclass `MetadataResolvingCodemodTest`. `tests/test_features.py` pins before/after output for the feature passes. These tests exercise one transformer at a time; for pipeline-level changes, also diff `py2star larkify` output on the files in `tests/data/` before and after, and run the Larky end-to-end tests.

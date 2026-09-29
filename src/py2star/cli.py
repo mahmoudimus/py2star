@@ -120,6 +120,7 @@ def larkify(filename, args):
         for_tests=args.for_tests,
         use_mutablestruct=args.use_mutablestruct,
         use_error_not_fail=args.use_error_not_fail,
+        unwrap_errors=args.unwrap_errors,
     )
     program = pipeline.larkify(
         safe_read(filename),
@@ -204,6 +205,13 @@ def main():
         action="store_true",
         default=False,
         help="Rewrites exceptions to use the Error module instead of fail",
+    )
+    larkify.add_argument(
+        "--unwrap-errors",
+        action="store_true",
+        default=False,
+        help="Rewrites raise to return Error(...).unwrap(), which fails "
+        "immediately instead of returning the Error",
     )
     larkify.add_argument(
         "--use-mutablestruct",

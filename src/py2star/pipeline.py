@@ -20,8 +20,10 @@ from py2star.asteez import (
     remove_types,
     rewrite_class,
     rewrite_comparisons,
+    rewrite_fstring,
     rewrite_imports,
     rewrite_loopz,
+    rewrite_scopes,
     rewrite_tests,
 )
 
@@ -36,6 +38,8 @@ class Options:
     use_mutablestruct: bool = False
     # rewrite exceptions to use the Error module instead of fail
     use_error_not_fail: bool = False
+    # raise => return Error(...).unwrap(), which fails immediately
+    unwrap_errors: bool = False
 
 
 def transform_passes(
@@ -44,6 +48,7 @@ def transform_passes(
     passes = [
         rewrite_comparisons.RemoveIfNameEqualsMain(context),
         desugar.RewriteImplicitStringConcat(context),
+        rewrite_fstring.RemoveFStrings(context),
         desugar.SwapByteStringPrefixes(context),
         desugar.SubMethodsWithLibraryCallsInstead(context),
         desugar.UnpackTargetAssignments(context),
@@ -52,14 +57,20 @@ def transform_passes(
             exclude_decorators=(
                 "staticmethod",
                 "classmethod",
+                "property",
+                ".setter",
             )
             if options.use_mutablestruct
             else None,
         ),
         desugar.DesugarBuiltinOperators(context),
         desugar.DesugarSetSyntax(context),
+        desugar.RewriteBuiltins(context),
         remove_exceptions.CommentTopLevelTryBlocks(context),
         desugar.RemoveDelKeyword(context),
+        desugar.RewriteSliceAssignment(context),
+        rewrite_scopes.BoxNonlocals(context),
+        rewrite_scopes.FlagGlobals(context),
         rewrite_loopz.WhileToForLoop(context),
         functionz.RewriteTypeChecks(context),
         functionz.GeneratorToFunction(context),
@@ -67,6 +78,9 @@ def transform_passes(
         rewrite_comparisons.IsComparisonTransformer(context),
         remove_types.RemoveTypesTransformer(context),
         remove_exceptions.RemoveExceptions(context),
+        remove_exceptions.TryExceptToResult(context),
+        # after TryExceptToResult, which moves breaks out of try bodies
+        rewrite_loopz.ForElseToFlag(context),
     ]
 
     # must run last otherwise messes up all the other transformers above
@@ -113,7 +127,12 @@ def larkify(
         wrapper=wrapper,
         filename=filename,
         full_module_name=full_module_name,
-        scratch={"config": {"use_error_not_fail": options.use_error_not_fail}},
+        scratch={
+            "config": {
+                "use_error_not_fail": options.use_error_not_fail,
+                "unwrap_errors": options.unwrap_errors,
+            }
+        },
     )
     for t in transform_passes(context, options):
         logger.debug("running transformer: %s", t)
