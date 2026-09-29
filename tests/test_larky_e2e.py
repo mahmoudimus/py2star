@@ -23,8 +23,12 @@ HERE = pathlib.Path(__file__).parent
 PROGRAMS = sorted((HERE / "e2e").glob("*.py"))
 LARKY_JAR = os.environ.get("LARKY_JAR")
 
+_MISSING = not LARKY_JAR or not shutil.which("javac")
+if _MISSING and os.environ.get("REQUIRE_LARKY"):
+    # CI sets REQUIRE_LARKY so a broken setup fails instead of skipping
+    raise RuntimeError("REQUIRE_LARKY is set but LARKY_JAR or javac is missing")
 pytestmark = pytest.mark.skipif(
-    not LARKY_JAR or not shutil.which("javac"),
+    _MISSING,
     reason="set LARKY_JAR to a starlarky jar-with-dependencies (needs a JDK)",
 )
 
