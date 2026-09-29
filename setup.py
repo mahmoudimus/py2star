@@ -79,13 +79,12 @@ setuptools.setup(
     platforms='any',
     install_requires=_readlines(REQUIREMENTS),
     extras_require=extras_require,
-    setup_requires=['pytest-runner'],
-    tests_require=extras_require['tests'],
-    # entry_points={
-    #         'console_scripts': [
-    #             '{{ cookiecutter.command_line_interface_bin_name }} = {{ cookiecutter.package_name }}.cli:main',
-    #         ]
-    #     },
+    python_requires='>=3.10',
+    entry_points={
+        'console_scripts': [
+            'py2star = py2star.cli:main',
+        ]
+    },
     classifiers=[
         'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',

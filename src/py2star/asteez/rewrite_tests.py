@@ -1,9 +1,7 @@
 import binascii
-import collections
 import re
 import uuid
 import typing
-from collections import Iterable
 
 from dataclasses import dataclass
 from functools import partial
@@ -190,6 +188,7 @@ _method_map = {
     "failUnlessEqual": partial(comp_op, "is_equal_to"),
     "assertNotEqual": partial(comp_op, "is_not_equal_to"),
     "failIfEqual": partial(comp_op, "is_not_equal_to"),
+    "assertEquals": partial(comp_op, "is_equal_to"),
     "assertNotEquals": partial(comp_op, "is_not_equal_to"),
     "assertIs": partial(comp_op, "is_equal_to"),
     "assertGreater": partial(comp_op, "is_greater_than"),
@@ -211,7 +210,9 @@ _method_map = {
     "failUnless": partial(unary_op, "is_true"),
     # "exceptions" in larky do not exist but we have asserts.assert_fails...
     "assertRaises": partial(raises_op),
+    "failUnlessRaises": partial(raises_op),
     "assertRaisesRegex": partial(raises_regex_op),
+    "assertRaisesRegexp": partial(raises_regex_op),
     "assertWarnsRegex": partial(raises_regex_op),  # this will fail, but w/e
     # types ones
     "assertDictContainsSubset": partial(
@@ -221,6 +222,7 @@ _method_map = {
         dual_op, "sorted(\1) == sorted(\2)", op="is_true"
     ),
     "assertRegex": partial(dual_op, "re.search(\2, \1)"),
+    "assertRegexpMatches": partial(dual_op, "re.search(\2, \1)"),
     "assertNotRegex": partial(
         dual_op, "not re.search(\2, \1)", op="is_false"
     ),  # new Py 3.2

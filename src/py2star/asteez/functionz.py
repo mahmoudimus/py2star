@@ -1,4 +1,3 @@
-import ast
 import inspect
 import string
 import textwrap
@@ -7,15 +6,15 @@ import typing
 import libcst as cst
 from libcst import Yield, matchers as m
 from libcst import Attribute, BaseExpression, Call, Name, codemod
-from libcst.codemod import CodemodContext, ContextAwareTransformer
+from libcst.codemod import CodemodContext
 from libcst.codemod.visitors import AddImportsVisitor
 
 
-def testsuite_generator(tree):
+def testsuite_generator(tree: cst.Module):
     all_functions = [
-        node.name
+        node.name.value
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and "test" in node.name
+        if isinstance(node, cst.FunctionDef) and "test" in node.name.value
     ]
 
     test_cases = textwrap.indent(
