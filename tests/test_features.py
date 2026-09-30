@@ -474,4 +474,4 @@ def test_fstrings_are_rewritten():
             return f"{x!r}: {x:>4}"
         """
     )
-    assert 'return ("%r: %>4" % (x, x))' in code
+    assert 'return ("%s: %s" % (repr(x), format(x, ">4")))' in code

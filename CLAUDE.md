@@ -43,7 +43,7 @@ Larky end-to-end tests (`tests/e2e/*.py` run under CPython and, larkified, under
 LARKY_JAR=~/src/starlarky/larky/target/larky-1.0.0-SNAPSHOT-jar-with-dependencies.jar pytest tests/test_larky_e2e.py
 ```
 
-CI (`.github/workflows/tests.yml`) runs the unit tests on Python 3.10-3.14 and the Larky tests against starlarky built from source at a pinned tag (`STARLARKY_REF`, currently `v0.16.0`; the release binaries cannot load `@stdlib//larky`). It sets `REQUIRE_LARKY=1`, which turns the skip into a failure. `test-requirements.txt` is only what the tests need; personal debugging tools live in `dev-requirements.txt`.
+CI (`.github/workflows/tests.yml`) runs the unit tests on Python 3.10-3.14 and the Larky tests against starlarky built from source at a pinned commit of the `mahmoudimus/starlarky` fork (`STARLARKY_REPO`/`STARLARKY_REF`; the fork has Python's `%` and `format()`, which translated format specs need, and the release binaries cannot load `@stdlib//larky`). The fork's jar needs Java 21. It sets `REQUIRE_LARKY=1`, which turns the skip into a failure. `test-requirements.txt` is only what the tests need; personal debugging tools live in `dev-requirements.txt`.
 
 Use them to check what Larky actually accepts before relying on it: many Python builtins and syntax are missing, and some stdlib helpers have bugs (e.g. `operator.delitem` always fails for dicts). `tests/larky/RunStar.java` is the launcher; `Larky.main` itself cannot run files that use `load()`.
 

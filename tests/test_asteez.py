@@ -42,16 +42,54 @@ class TestRemoveFStrings(CodemodTest):
 
     def test_format_spec_and_escapes(self):
         before = r"""
-        a = f"{x:>4} {y!r} 100% {{z}}"
-        b = rf'\d{n}'
+        a = f"{x:>4} {y!r} 100% {{z}} tab\t {w:{width}}"
+        b = rf'\d{n:03d}'
         c = f"no fields"
+        d = f"{v=}"
         """
         after = r"""
-        a = ("%>4 %r 100%% {z}" % (x, y))
-        b = (r'\d%s' % (n,))
+        a = ("%s %s 100%% {z} tab\t %s" % (format(x, ">4"), repr(y), format(w, str(width))))
+        b = ("\\d%s" % (format(n, "03d"),))
         c = f"no fields"
+        d = f"{v=}"
         """
         self.assertCodemod(before, after)
+
+
+class TestRewriteStrFormat(CodemodTest):
+    TRANSFORM = rewrite_fstring.RewriteStrFormat
+
+    def test_specs_and_conversions(self):
+        before = r"""
+        e = "{0:02x}|{1!r}|{name:>4}|{0.attr}|{1[k]}".format(p, q, name=r)
+        i = "{0:x}{0:X}".format(n)
+        i2 = "{0:x}{0:X}".format(n + 3)
+        j = ("abc {:>3}" + " def").format(1)
+        k = "%d {:>3}".format(5)
+        """
+        after = r"""
+        e = ("%s|%s|%s|%s|%s" % (format(p, "02x"), repr(q), format(r, ">4"), p.attr, q["k"]))
+        i = ("%s%s" % (format(n, "x"), format(n, "X")))
+        i2 = ("%s%s" % (format(n + 3, "x"), format(n + 3, "X")))
+        j = ("abc %s def" % (format(1, ">3"),))
+        k = ("%%d %s" % (format(5, ">3"),))
+        """
+        self.assertCodemod(before, after)
+
+    def test_left_alone(self):
+        before = r"""
+        # plain fields: Larky's str.format handles these
+        g = "{}-{}-{name}".format(a, c, name=b)
+        # mixed automatic and manual numbering raises in Python
+        m = "{:x}{0}".format(a)
+        # f() would run twice
+        h = "{0:x}{0:X}".format(f())
+        # nested field in a spec, *args
+        s = "{:{w}}".format(x, w=3)
+        t = "{:>3}".format(*xs)
+        u = template.format(x)
+        """
+        self.assertCodemod(before, before)
 
 
 def test_remove_types(source_tree):

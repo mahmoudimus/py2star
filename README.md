@@ -59,10 +59,11 @@ output matches CPython (see [Testing against Larky](#testing-against-larky)).
 
 - [x] Builtins Starlark lacks: `sum`, `map` (`builtins.*`), `filter` (list comprehension), `dict.fromkeys` (`larky.dicts.fromkeys`), `bytearray(n)`, `str.encode` (`codecs.encode`), `codecs.encode(b, "hex")` (`binascii`). *verified*
   - Also `issubclass` (`larky.is_subclass`), not yet covered by `tests/e2e/`.
-  - Not yet: `round`, `oct`, `format`, and `%` format flags/widths such as `%02x` (Larky's `.format()` supports no format specs, so `%` is kept).
+  - Not yet: `round`, `oct`.
 - [x] `set` / `frozenset` literals, comprehensions and calls, via [`sets.star`](https://github.com/verygoodsecurity/starlarky/blob/master/larky/src/main/resources/stdlib/sets.star)'s `Set`. *verified*
 - [x] Implicit string concatenation (explicit `+`).
-- [x] f-strings (`%` formatting). *verified*
+- [x] f-strings, and format specs or `!r`/`!s` conversions in `str.format()` fields: `%` formatting, with `format(value, spec)` for specs. *verified*
+  - Specs and Python-style `%` flags (`%02x`, `%(name)s`) need a Larky with Python's `%` and `format()`, such as [mahmoudimus/starlarky](https://github.com/mahmoudimus/starlarky) (`bc`).
 - [x] Chained comparisons (e.g. `1 < x < 5`).
 - [x] `class` (see `larky.struct` function). `@property` / `@x.setter` need `--use-mutablestruct` (`larky.property`). *verified*
 - [x] `import` (see `load` statement).
