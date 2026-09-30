@@ -5,9 +5,11 @@ checks that the translated programs behave like CPython when run in Larky.
 """
 import pathlib
 import re
+import string
 import textwrap
 
 import libcst as cst
+import libcst.matchers as m
 import pytest
 from libcst.codemod import CodemodContext
 
@@ -476,7 +478,7 @@ def test_fstrings_are_rewritten():
             return f"{x!r}: {x:>4}"
         """
     )
-    assert 'return (repr(x) + ": " + format(x, ">4"))' in code
+    assert 'return "{}: {}".format(repr(x), format(x, ">4"))' in code
 
 
 @pytest.mark.parametrize(
@@ -484,8 +486,10 @@ def test_fstrings_are_rewritten():
     sorted((pathlib.Path(__file__).parent / "e2e").glob("*.py")),
     ids=lambda p: p.stem,
 )
-def test_output_does_not_use_percent_formatting(program):
-    """Hosts can supply format(), but not always a Python-compatible %."""
+def test_output_formatting_is_portable(program):
+    """Hosts can supply format(), but not always a Python-compatible % or
+    str.format(): output may use neither % formatting nor str.format()
+    fields with format specs or conversions."""
     source = program.read_text()
     match = re.match(r"# options: (.*)", source)
     options = eval(f"dict({match.group(1)})") if match else {}
@@ -500,7 +504,32 @@ def test_output_does_not_use_percent_formatting(program):
             ):
                 self.found.append(cst.Module([]).code_for_node(node))
 
+        def visit_Call(self, node):
+            if m.matches(
+                node, m.Call(func=m.Attribute(value=m.SimpleString(), attr=m.Name("format")))
+            ):
+                template = node.func.value.evaluated_value
+                for _, field, spec, conversion in string.Formatter().parse(template):
+                    if field is not None and (spec or conversion):
+                        self.found.append(cst.Module([]).code_for_node(node))
+
     visitor = _Percent()
     visitor.found = []
     cst.parse_module(code).visit(visitor)
     assert visitor.found == []
+
+
+def test_translated_formatting_runs_the_same_in_cpython(capsys):
+    """The formatting output uses only format(), str(), repr() and plain
+    str.format() fields, so the .star file also runs in CPython."""
+    program = pathlib.Path(__file__).parent / "e2e" / "formatting.py"
+    source = program.read_text()
+    exec(compile(source, str(program), "exec"), {})
+    expected = capsys.readouterr().out
+
+    star = larkify(source)
+    body = "\n".join(
+        line for line in star.splitlines() if not line.startswith("load(")
+    )
+    exec(compile(body, "formatting.star", "exec"), {})
+    assert capsys.readouterr().out == expected

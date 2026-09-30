@@ -59,7 +59,7 @@ Use them to check what Larky actually accepts before relying on it: many Python 
    - Config reaches transformers through `context.scratch["config"]`.
 3. `pipeline.import_passes()` runs on a fresh `MetadataWrapper`: `AddImportsVisitor` / `RemoveImportsVisitor` apply imports queued by earlier passes (`AddImportsVisitor.add_needed_import`), `RewriteImports` turns `import`s into `load()`, and `LarkyImportSorter` hoists and sorts the loads.
 
-String formatting (f-strings, `str.format()` specs, printf `%`) is translated to concatenation with `format()`/`str()`/`repr()` in `rewrite_fstring.py`, never to `%`: hosts can inject a Python-compatible `format()`, but not always change Starlark's `%`. `tests/test_features.py` checks the e2e programs' output has no `%` string formatting.
+String formatting (f-strings, `str.format()` specs, printf `%`) is translated in `rewrite_fstring.py` to `"...{}...".format(...)` with plain `{}` fields, passing spec'd values through `format(value, spec)` and `%r`/`!r` through `repr()`. Never emit `%` formatting or `str.format()` specs: hosts can inject a Python-compatible `format()`, but not always change Starlark's `%` or `str.format()`. The output also runs unchanged in CPython. `tests/test_features.py` checks both properties.
 
 A new transformer does nothing until it is added to `transform_passes()` in the right position. Generated helper names use a leading underscore and a per-module counter (`_try_1`, `_broke_1`, `_lo_s1`); constructs that cannot be translated keep their code and get a `# PY2LARKY:` comment.
 

@@ -62,8 +62,13 @@ output matches CPython (see [Testing against Larky](#testing-against-larky)).
   - Not yet: `round`, `oct`.
 - [x] `set` / `frozenset` literals, comprehensions and calls, via [`sets.star`](https://github.com/verygoodsecurity/starlarky/blob/master/larky/src/main/resources/stdlib/sets.star)'s `Set`. *verified*
 - [x] Implicit string concatenation (explicit `+`).
-- [x] String formatting: f-strings, `str.format()` fields with format specs or `!r`/`!s` conversions, and printf-style `%` with a literal format string become string concatenation of the text and `format(value, spec)` / `str()` / `repr()` calls, e.g. `"%05.1f|%-5s" % (x, y)` becomes `(format(x, "05.1f") + "|" + format(str(y), "<5"))`. *verified*
-  - The output needs only a `format()` built-in that follows Python's format spec mini-language, which a host can inject, such as [mahmoudimus/starlarky](https://github.com/mahmoudimus/starlarky) (`bc`); it does not depend on how the host's `%` behaves.
+- [x] String formatting: f-strings, `str.format()` fields with format specs or `!r`/`!s` conversions, and printf-style `%` with a literal format string become a `str.format()` template with plain `{}` fields; a value with a spec is passed through `format(value, spec)`, and `%r`/`!r` through `repr()`. *verified*
+  ```python
+  "Invalid %s" % e                  # => "Invalid {}".format(e)
+  "%05.1f|%-5s" % (x, y)            # => "{}|{}".format(format(x, "05.1f"), format(str(y), "<5"))
+  f"key={k!r} size={n:,}"           # => "key={} size={}".format(repr(k), format(n, ","))
+  ```
+  - The output needs only plain `{}` fields (standard Starlark) and a `format()` built-in that follows Python's format spec mini-language, which a host can inject, such as [mahmoudimus/starlarky](https://github.com/mahmoudimus/starlarky) (`bc`). It does not depend on the host's `%` or on `str.format()` specs, and it runs unchanged in CPython (only `repr()` quoting differs: `'a'` vs `"a"`).
   - Left as `%`: a format string that is not a literal, `%c`, and precision on an integer conversion (`%.3d`). `%a` becomes `repr()` (Starlark has no `ascii()`).
 - [x] Chained comparisons (e.g. `1 < x < 5`).
 - [x] `class` (see `larky.struct` function). `@property` / `@x.setter` need `--use-mutablestruct` (`larky.property`). *verified*

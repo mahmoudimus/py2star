@@ -1,11 +1,16 @@
 """
 String formatting whose Larky support varies by host: f-strings, format
 specs or conversions in str.format() fields, and printf-style ``%``
-formatting. All three become string concatenation of the literal text and
-``format(value, spec)`` / ``str()`` / ``repr()`` calls, so the output needs
-only a ``format()`` built-in that follows Python's format spec
-mini-language, which a host can provide; Starlark's own ``%`` supports only
-bare conversions and cannot always be changed.
+formatting. All three become ``"...{}...".format(...)`` with plain ``{}``
+fields (standard Starlark), each value that has a spec passed through
+``format(value, spec)`` and each ``!r``/``%r`` through ``repr()``:
+
+    "%05.1f|%-5s" % (x, y)  =>  "{}|{}".format(format(x, "05.1f"), format(str(y), "<5"))
+
+So the output needs only a ``format()`` built-in that follows Python's
+format spec mini-language, which a host can provide; Starlark's own ``%``
+(bare conversions only) and ``str.format`` (no specs) cannot always be
+changed. The same output runs unchanged in CPython.
 """
 import re
 import string
@@ -53,15 +58,38 @@ def _join(pieces: List[Piece]) -> cst.BaseExpression:
     return result.with_changes(lpar=[cst.LeftParen()], rpar=[cst.RightParen()])
 
 
+def _template(pieces: List[Piece]) -> cst.BaseExpression:
+    """``"text {} text".format(value, ...)`` from literal text and values."""
+    text, args = "", []
+    for piece in pieces:
+        if isinstance(piece, str):
+            text += piece.replace("{", "{{").replace("}", "}}")
+        else:
+            text += "{}"
+            args.append(piece)
+    if not args:
+        return _str(text.replace("{{", "{").replace("}}", "}"))
+    if text == "{}":
+        # a lone field: f"{x}" / "%s" % x
+        (value,) = args
+        if m.matches(value, m.Call(func=m.Name("str") | m.Name("repr") | m.Name("format"))):
+            return value
+        return _call("str", value)
+    return cst.Call(
+        func=cst.Attribute(_str(text), cst.Name("format")),
+        args=[cst.Arg(a) for a in args],
+    )
+
+
 def _field(
     value: cst.BaseExpression,
     conversion: Optional[str],
     spec: Optional[cst.BaseExpression],
 ) -> cst.BaseExpression:
-    """A str.format()/f-string replacement field as a string expression."""
+    """The value to put in a plain {} field for a replacement field."""
     if conversion in ("r", "a"):
         value = _call("repr", value)
-    elif conversion == "s" or spec is None:
+    elif conversion == "s" and spec is not None:
         value = _call("str", value)
     if spec is not None:
         value = _call("format", value, spec)
@@ -143,11 +171,12 @@ class RemoveFStrings(codemod.ContextAwareTransformer):
                 pieces.append(part.value)
             else:
                 # nested field, e.g. f"{x:{width}}"
-                pieces.append(
-                    _field(
-                        part.expression, part.conversion, self._spec(part.format_spec)
-                    )
+                value = _field(
+                    part.expression, part.conversion, self._spec(part.format_spec)
                 )
+                if not m.matches(value, m.Call(func=m.Name("str") | m.Name("repr") | m.Name("format"))):
+                    value = _call("str", value)
+                pieces.append(value)
         return _join(pieces)
 
     def leave_FormattedString(
@@ -187,7 +216,7 @@ class RemoveFStrings(codemod.ContextAwareTransformer):
             pieces.append(
                 _field(part.expression, part.conversion, self._spec(part.format_spec))
             )
-        return _join(pieces)
+        return _template(pieces)
 
 
 class RewriteStrFormat(codemod.ContextAwareTransformer):
@@ -279,7 +308,7 @@ class RewriteStrFormat(codemod.ContextAwareTransformer):
             node = positional[key[1]] if key[0] == "pos" else keywords[key[1]]
             if used.count(key) != 1 and not _is_repeatable(node):
                 return updated_node
-        return _join(pieces)
+        return _template(pieces)
 
 
 _PRINTF = re.compile(
@@ -451,19 +480,22 @@ class RewritePercentFormat(codemod.ContextAwareTransformer):
                     return updated_node
                 ftype = ctype
             elif ctype in "rsa":
-                value = _call("repr" if ctype in "ra" else "str", value)
+                if ctype in "ra":
+                    value = _call("repr", value)
                 ftype = ""
             else:
                 # %c, or a conversion Python rejects
                 return updated_node
             spec = self._spec(flags, width, precision, ftype, star)
-            if spec == "":
+            if spec in ("", "d"):
+                # a plain {} field formats with str()
                 pieces.append(value)
-            elif spec == "d":
-                pieces.append(_call("str", value))
             else:
+                if ctype == "s":
+                    # %5s formats str(value), not value.__format__
+                    value = _call("str", value)
                 pieces.append(
                     _call("format", value, _str(spec) if isinstance(spec, str) else spec)
                 )
         pieces.append(fmt[pos:])
-        return _join(pieces)
+        return _template(pieces)

@@ -37,7 +37,7 @@ class TestRemoveFStrings(CodemodTest):
             code = f.read()
         tree = cst.parse_module(code)
         rewritten = tree.visit(self.TRANSFORM(CodemodContext())).code
-        assert 'raise ValueError((str(key) + ", " + str(mode) + ", " + str(nonce)))' in rewritten
+        assert 'raise ValueError("{}, {}, {}".format(key, mode, nonce))' in rewritten
         assert "return str(foo)" in rewritten
 
     def test_format_spec_and_escapes(self):
@@ -49,8 +49,8 @@ class TestRemoveFStrings(CodemodTest):
         e = f"{x}"
         """
         after = r"""
-        a = (format(x, ">4") + " " + repr(y) + " 100% {z} tab\t " + format(w, str(width)))
-        b = ("\\d" + format(n, "03d"))
+        a = "{} {} 100% {{z}} tab\t {}".format(format(x, ">4"), repr(y), format(w, str(width)))
+        b = "\\d{}".format(format(n, "03d"))
         c = f"no fields"
         d = f"{v=}"
         e = str(x)
@@ -70,11 +70,11 @@ class TestRewriteStrFormat(CodemodTest):
         k = "%d {:>3}".format(5)
         """
         after = r"""
-        e = (format(p, "02x") + "|" + repr(q) + "|" + format(r, ">4") + "|" + str(p.attr) + "|" + str(q["k"]))
-        i = (format(n, "x") + format(n, "X"))
-        i2 = (format(n + 3, "x") + format(n + 3, "X"))
-        j = ("abc " + format(1, ">3") + " def")
-        k = ("%d " + format(5, ">3"))
+        e = "{}|{}|{}|{}|{}".format(format(p, "02x"), repr(q), format(r, ">4"), p.attr, q["k"])
+        i = "{}{}".format(format(n, "x"), format(n, "X"))
+        i2 = "{}{}".format(format(n + 3, "x"), format(n + 3, "X"))
+        j = "abc {} def".format(format(1, ">3"))
+        k = "%d {}".format(format(5, ">3"))
         """
         self.assertCodemod(before, after)
 
@@ -108,13 +108,13 @@ class TestRewritePercentFormat(CodemodTest):
         g = "%s and %s" % (f(), g())
         """
         after = r"""
-        a = (format(x, "05.1f") + "|" + format(str(y), "<5") + "|" + format(int(n), "+d") + "|" + format(n, "x") + "|" + format(n, "#o") + "|" + format(str(s), ">5") + "|" + format(int(n), "<5d") + "|%")
-        b = (str(key) + "=" + format(int(val), "03d") + " " + repr(key))
+        a = "{}|{}|{}|{}|{}|{}|{}|%".format(format(x, "05.1f"), format(str(y), "<5"), format(int(n), "+d"), format(n, "x"), format(n, "#o"), format(str(s), ">5"), format(int(n), "<5d"))
+        b = "{}={} {}".format(key, format(int(val), "03d"), repr(key))
         c = str(mapping["k"])
-        d = ("Invalid " + str(e))
-        e = (str(pair[0]) + "-" + str(pair[1]))
-        f = (format(int(n), (str(w) + "d")) + "|" + format(v, ("<" + str(w) + "." + str(p) + "f")))
-        g = (str(f()) + " and " + str(g()))
+        d = "Invalid {}".format(e)
+        e = "{}-{}".format(pair[0], pair[1])
+        f = "{}|{}".format(format(int(n), (str(w) + "d")), format(v, ("<" + str(w) + "." + str(p) + "f")))
+        g = "{} and {}".format(f(), g())
         """
         self.assertCodemod(before, after)
 
