@@ -49,6 +49,8 @@ def transform_passes(
         rewrite_comparisons.RemoveIfNameEqualsMain(context),
         desugar.RewriteImplicitStringConcat(context),
         rewrite_fstring.RemoveFStrings(context),
+        rewrite_fstring.RewriteStrFormat(context),
+        rewrite_fstring.RewritePercentFormat(context),
         desugar.SwapByteStringPrefixes(context),
         desugar.SubMethodsWithLibraryCallsInstead(context),
         desugar.UnpackTargetAssignments(context),
