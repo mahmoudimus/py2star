@@ -3,6 +3,8 @@ Before/after cases for the passes that translate Python features Starlark
 lacks (try/except, generators, nonlocal, slices, ...). tests/test_larky_e2e.py
 checks that the translated programs behave like CPython when run in Larky.
 """
+import pathlib
+import re
 import textwrap
 
 import libcst as cst
@@ -474,4 +476,31 @@ def test_fstrings_are_rewritten():
             return f"{x!r}: {x:>4}"
         """
     )
-    assert 'return ("%s: %s" % (repr(x), format(x, ">4")))' in code
+    assert 'return (repr(x) + ": " + format(x, ">4"))' in code
+
+
+@pytest.mark.parametrize(
+    "program",
+    sorted((pathlib.Path(__file__).parent / "e2e").glob("*.py")),
+    ids=lambda p: p.stem,
+)
+def test_output_does_not_use_percent_formatting(program):
+    """Hosts can supply format(), but not always a Python-compatible %."""
+    source = program.read_text()
+    match = re.match(r"# options: (.*)", source)
+    options = eval(f"dict({match.group(1)})") if match else {}
+    code = larkify(source, **options)
+
+    class _Percent(cst.CSTVisitor):
+        found = []
+
+        def visit_BinaryOperation(self, node):
+            if isinstance(node.operator, cst.Modulo) and isinstance(
+                node.left, (cst.SimpleString, cst.ConcatenatedString)
+            ):
+                self.found.append(cst.Module([]).code_for_node(node))
+
+    visitor = _Percent()
+    visitor.found = []
+    cst.parse_module(code).visit(visitor)
+    assert visitor.found == []

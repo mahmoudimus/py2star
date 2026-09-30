@@ -37,8 +37,8 @@ class TestRemoveFStrings(CodemodTest):
             code = f.read()
         tree = cst.parse_module(code)
         rewritten = tree.visit(self.TRANSFORM(CodemodContext())).code
-        assert 'raise ValueError(("%s, %s, %s" % (key, mode, nonce)))' in rewritten
-        assert 'return ("%s" % (foo,))' in rewritten
+        assert 'raise ValueError((str(key) + ", " + str(mode) + ", " + str(nonce)))' in rewritten
+        assert "return str(foo)" in rewritten
 
     def test_format_spec_and_escapes(self):
         before = r"""
@@ -46,12 +46,14 @@ class TestRemoveFStrings(CodemodTest):
         b = rf'\d{n:03d}'
         c = f"no fields"
         d = f"{v=}"
+        e = f"{x}"
         """
         after = r"""
-        a = ("%s %s 100%% {z} tab\t %s" % (format(x, ">4"), repr(y), format(w, str(width))))
-        b = ("\\d%s" % (format(n, "03d"),))
+        a = (format(x, ">4") + " " + repr(y) + " 100% {z} tab\t " + format(w, str(width)))
+        b = ("\\d" + format(n, "03d"))
         c = f"no fields"
         d = f"{v=}"
+        e = str(x)
         """
         self.assertCodemod(before, after)
 
@@ -68,11 +70,11 @@ class TestRewriteStrFormat(CodemodTest):
         k = "%d {:>3}".format(5)
         """
         after = r"""
-        e = ("%s|%s|%s|%s|%s" % (format(p, "02x"), repr(q), format(r, ">4"), p.attr, q["k"]))
-        i = ("%s%s" % (format(n, "x"), format(n, "X")))
-        i2 = ("%s%s" % (format(n + 3, "x"), format(n + 3, "X")))
-        j = ("abc %s def" % (format(1, ">3"),))
-        k = ("%%d %s" % (format(5, ">3"),))
+        e = (format(p, "02x") + "|" + repr(q) + "|" + format(r, ">4") + "|" + str(p.attr) + "|" + str(q["k"]))
+        i = (format(n, "x") + format(n, "X"))
+        i2 = (format(n + 3, "x") + format(n + 3, "X"))
+        j = ("abc " + format(1, ">3") + " def")
+        k = ("%d " + format(5, ">3"))
         """
         self.assertCodemod(before, after)
 
@@ -88,6 +90,43 @@ class TestRewriteStrFormat(CodemodTest):
         s = "{:{w}}".format(x, w=3)
         t = "{:>3}".format(*xs)
         u = template.format(x)
+        """
+        self.assertCodemod(before, before)
+
+
+class TestRewritePercentFormat(CodemodTest):
+    TRANSFORM = rewrite_fstring.RewritePercentFormat
+
+    def test_conversions(self):
+        before = r"""
+        a = "%05.1f|%-5s|%+d|%x|%#o|%5s|%-05d|%%" % (x, y, n, n, n, s, n)
+        b = "%(k)s=%(v)03d %(k)r" % {"k": key, "v": val}
+        c = "%(k)s" % mapping
+        d = "Invalid %s" % e
+        e = "%s-%s" % pair
+        f = "%*d|%-*.*f" % (w, n, w, p, v)
+        g = "%s and %s" % (f(), g())
+        """
+        after = r"""
+        a = (format(x, "05.1f") + "|" + format(str(y), "<5") + "|" + format(int(n), "+d") + "|" + format(n, "x") + "|" + format(n, "#o") + "|" + format(str(s), ">5") + "|" + format(int(n), "<5d") + "|%")
+        b = (str(key) + "=" + format(int(val), "03d") + " " + repr(key))
+        c = str(mapping["k"])
+        d = ("Invalid " + str(e))
+        e = (str(pair[0]) + "-" + str(pair[1]))
+        f = (format(int(n), (str(w) + "d")) + "|" + format(v, ("<" + str(w) + "." + str(p) + "f")))
+        g = (str(f()) + " and " + str(g()))
+        """
+        self.assertCodemod(before, after)
+
+    def test_left_alone(self):
+        before = r"""
+        # not a literal, bytes, %c, precision on an int, args that don't fit
+        i = fmt % x
+        j = b"%s" % x
+        k = "%c" % 65
+        l = "%.3d" % 5
+        m = "%s %s" % f()
+        n = "abc" % x
         """
         self.assertCodemod(before, before)
 

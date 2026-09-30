@@ -50,6 +50,7 @@ def transform_passes(
         desugar.RewriteImplicitStringConcat(context),
         rewrite_fstring.RemoveFStrings(context),
         rewrite_fstring.RewriteStrFormat(context),
+        rewrite_fstring.RewritePercentFormat(context),
         desugar.SwapByteStringPrefixes(context),
         desugar.SubMethodsWithLibraryCallsInstead(context),
         desugar.UnpackTargetAssignments(context),

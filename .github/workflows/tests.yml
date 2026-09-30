@@ -22,8 +22,8 @@ jobs:
 
   # Larkify tests/e2e/*.py, run the output in Larky and compare it with
   # CPython's. Larky is built from source: the release binaries cannot load
-  # @stdlib//larky. The fork adds Python's % formatting and format(), which
-  # translated f-strings and str.format() specs rely on.
+  # @stdlib//larky. The fork adds the format() built-in, which translated
+  # string formatting (f-strings, str.format() specs, %) relies on.
   larky:
     runs-on: ubuntu-latest
     env:

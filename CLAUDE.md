@@ -43,7 +43,7 @@ Larky end-to-end tests (`tests/e2e/*.py` run under CPython and, larkified, under
 LARKY_JAR=~/src/starlarky/larky/target/larky-1.0.0-SNAPSHOT-jar-with-dependencies.jar pytest tests/test_larky_e2e.py
 ```
 
-CI (`.github/workflows/tests.yml`) runs the unit tests on Python 3.10-3.14 and the Larky tests against starlarky built from source at a pinned commit of the `mahmoudimus/starlarky` fork (`STARLARKY_REPO`/`STARLARKY_REF`; the fork has Python's `%` and `format()`, which translated format specs need, and the release binaries cannot load `@stdlib//larky`). The fork's jar needs Java 21. It sets `REQUIRE_LARKY=1`, which turns the skip into a failure. `test-requirements.txt` is only what the tests need; personal debugging tools live in `dev-requirements.txt`.
+CI (`.github/workflows/tests.yml`) runs the unit tests on Python 3.10-3.14 and the Larky tests against starlarky built from source at a pinned commit of the `mahmoudimus/starlarky` fork (`STARLARKY_REPO`/`STARLARKY_REF`; the fork has the `format()` built-in, and the release binaries cannot load `@stdlib//larky`). The fork's jar needs Java 21. It sets `REQUIRE_LARKY=1`, which turns the skip into a failure. `test-requirements.txt` is only what the tests need; personal debugging tools live in `dev-requirements.txt`.
 
 Use them to check what Larky actually accepts before relying on it: many Python builtins and syntax are missing, and some stdlib helpers have bugs (e.g. `operator.delitem` always fails for dicts). `tests/larky/RunStar.java` is the launcher; `Larky.main` itself cannot run files that use `load()`.
 
@@ -58,6 +58,8 @@ Use them to check what Larky actually accepts before relying on it: many Python 
    - The class rewriter runs last because it restructures the module: `rewrite_class.ClassToFunctionRewriter` normally, or `rewrite_tests.UnittestAssertMethodsRewriter` + `Unittest2Functions` in `-t` mode. It must ignore functions nested inside methods (including generated `_try_N` helpers).
    - Config reaches transformers through `context.scratch["config"]`.
 3. `pipeline.import_passes()` runs on a fresh `MetadataWrapper`: `AddImportsVisitor` / `RemoveImportsVisitor` apply imports queued by earlier passes (`AddImportsVisitor.add_needed_import`), `RewriteImports` turns `import`s into `load()`, and `LarkyImportSorter` hoists and sorts the loads.
+
+String formatting (f-strings, `str.format()` specs, printf `%`) is translated to concatenation with `format()`/`str()`/`repr()` in `rewrite_fstring.py`, never to `%`: hosts can inject a Python-compatible `format()`, but not always change Starlark's `%`. `tests/test_features.py` checks the e2e programs' output has no `%` string formatting.
 
 A new transformer does nothing until it is added to `transform_passes()` in the right position. Generated helper names use a leading underscore and a per-module counter (`_try_1`, `_broke_1`, `_lo_s1`); constructs that cannot be translated keep their code and get a `# PY2LARKY:` comment.
 

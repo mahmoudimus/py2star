@@ -11,3 +11,17 @@ def main():
     print("%(k)s=%(v)03d" % {"k": "key", "v": n})
 
 main()
+
+
+def percent():
+    x, s, f, big = 255, "ab", -2.5, 2 ** 70
+    print("%5s|%-5s|%.1s|%r|%%|%s" % (s, s, s, s, (1, 2)))
+    print("%d|%i|%u|%+d|% d|%05d|%-5d|%x|%#X|%o|%#o" % (x, x, x, x, x, -x, x, x, x, x, x))
+    print("%f|%.2f|%+.3e|%G|%g|%10.4f|%-10.1f|%010.2f" % (f, f, f, f, 1e-7, f, f, f))
+    print("%d %x" % (big, big))
+    print("%*d|%-*.*f|" % (6, 42, 8, 2, 3.14159))
+    print("%(name)s is %(age)03d, %(name)r" % {"name": "al", "age": 7})
+    print("value: %s" % x)
+    print("%d%%" % 3.9)
+
+percent()
