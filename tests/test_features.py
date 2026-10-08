@@ -427,6 +427,64 @@ def test_property_with_mutablestruct():
     assert "@property" not in code and ".setter" not in code
 
 
+def test_mutablestruct_init_keeps_outer_default():
+    code = larkify(
+        """
+        class Counter(object):
+            def __init__(self, start=0):
+                self.n = start
+        """,
+        use_mutablestruct=True,
+    )
+    assert "def Counter(start=0):" in code
+    assert "def __init__(start):" in code
+    assert "self = __init__(start)" in code
+
+
+@pytest.mark.parametrize("default", ["", "=2"])
+def test_mutablestruct_init_forwards_variadic_arguments(default):
+    code = larkify(
+        f"""
+        class Counter(object):
+            def __init__(self, a, b{default}, *args, **kwargs):
+                self.values = (a, b, args, kwargs)
+        """,
+        use_mutablestruct=True,
+    )
+    assert f"def Counter(a, b{default}, *args, **kwargs):" in code
+    assert "def __init__(a, b, args, kwargs):" in code
+    assert "self = __init__(a, b, args, kwargs)" in code
+
+
+@pytest.mark.parametrize("default", ["", "=3"])
+def test_mutablestruct_init_preserves_parameter_order(default):
+    code = larkify(
+        f"""
+        class Ordered(object):
+            def __init__(self, a, /, b, *, c{default}):
+                self.values = (a, b, c)
+        """,
+        use_mutablestruct=True,
+    )
+    assert f"def Ordered(a, /, b, *, c{default}):" in code
+    assert "def __init__(a, b, c):" in code
+    assert "self = __init__(a, b, c)" in code
+
+
+def test_mutablestruct_init_removes_self_only_posonly_group():
+    code = larkify(
+        """
+        class Counter(object):
+            def __init__(self, /, start=0):
+                self.n = start
+        """,
+        use_mutablestruct=True,
+    )
+    assert "def Counter(start=0):" in code
+    assert "def __init__(start):" in code
+    assert "self = __init__(start)" in code
+
+
 def test_property_without_mutablestruct_is_flagged():
     code = larkify(
         """
