@@ -68,7 +68,7 @@ output matches CPython (see [Testing against Larky](#testing-against-larky)).
   "%05.1f|%-5s" % (x, y)            # => "{}|{}".format(format(x, "05.1f"), format(str(y), "<5"))
   f"key={k!r} size={n:,}"           # => "key={} size={}".format(repr(k), format(n, ","))
   ```
-  - The output needs only plain `{}` fields (standard Starlark) and a `format()` built-in that follows Python's format spec mini-language, which a host can inject, such as [mahmoudimus/starlarky](https://github.com/mahmoudimus/starlarky) (`bc`). It does not depend on the host's `%` or on `str.format()` specs, and it runs unchanged in CPython (only `repr()` quoting differs: `'a'` vs `"a"`).
+  - The output needs only plain `{}` fields (standard Starlark) and a `format()` built-in that follows Python's format spec mini-language, which a host can inject; starlarky has it since [#723](https://github.com/verygoodsecurity/starlarky/pull/723). It does not depend on the host's `%` or on `str.format()` specs, and it runs unchanged in CPython (only `repr()` quoting differs: `'a'` vs `"a"`).
   - Left as `%`: a format string that is not a literal, `%c`, and precision on an integer conversion (`%.3d`). `%a` becomes `repr()` (Starlark has no `ascii()`).
 - [x] Chained comparisons (e.g. `1 < x < 5`).
 - [x] `class` (see `larky.struct` function). `@property` / `@x.setter` need `--use-mutablestruct` (`larky.property`). *verified*
