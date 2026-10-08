@@ -178,7 +178,9 @@ class RemoveExceptions(codemod.ContextAwareTransformer):
             value.operator, (cst.Add, cst.Modulo)
         ):
             return RemoveExceptions._is_str_expr(value.left)
-        # "...".format(...), "".join(...), etc.
+        # str(...), repr(...), format(...), "...".format(...), "".join(...)
+        if m.matches(value, m.Call(func=m.Name("str") | m.Name("repr") | m.Name("format"))):
+            return True
         return m.matches(
             value,
             m.Call(

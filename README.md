@@ -59,10 +59,17 @@ output matches CPython (see [Testing against Larky](#testing-against-larky)).
 
 - [x] Builtins Starlark lacks: `sum`, `map` (`builtins.*`), `filter` (list comprehension), `dict.fromkeys` (`larky.dicts.fromkeys`), `bytearray(n)`, `str.encode` (`codecs.encode`), `codecs.encode(b, "hex")` (`binascii`). *verified*
   - Also `issubclass` (`larky.is_subclass`), not yet covered by `tests/e2e/`.
-  - Not yet: `round`, `oct`, `format`, and `%` format flags/widths such as `%02x` (Larky's `.format()` supports no format specs, so `%` is kept).
+  - Not yet: `round`, `oct`.
 - [x] `set` / `frozenset` literals, comprehensions and calls, via [`sets.star`](https://github.com/verygoodsecurity/starlarky/blob/master/larky/src/main/resources/stdlib/sets.star)'s `Set`. *verified*
 - [x] Implicit string concatenation (explicit `+`).
-- [x] f-strings (`%` formatting). *verified*
+- [x] String formatting: f-strings, `str.format()` fields with format specs or `!r`/`!s` conversions, and printf-style `%` with a literal format string become a `str.format()` template with plain `{}` fields; a value with a spec is passed through `format(value, spec)`, and `%r`/`!r` through `repr()`. *verified*
+  ```python
+  "Invalid %s" % e                  # => "Invalid {}".format(e)
+  "%05.1f|%-5s" % (x, y)            # => "{}|{}".format(format(x, "05.1f"), format(str(y), "<5"))
+  f"key={k!r} size={n:,}"           # => "key={} size={}".format(repr(k), format(n, ","))
+  ```
+  - The output needs only plain `{}` fields (standard Starlark) and a `format()` built-in that follows Python's format spec mini-language, which a host can inject; starlarky has it since [#723](https://github.com/verygoodsecurity/starlarky/pull/723). It does not depend on the host's `%` or on `str.format()` specs, and it runs unchanged in CPython (only `repr()` quoting differs: `'a'` vs `"a"`).
+  - Left as `%`: a format string that is not a literal, `%c`, and precision on an integer conversion (`%.3d`). `%a` becomes `repr()` (Starlark has no `ascii()`).
 - [x] Chained comparisons (e.g. `1 < x < 5`).
 - [x] `class` (see `larky.struct` function). `@property` / `@x.setter` need `--use-mutablestruct` (`larky.property`). *verified*
 - [x] `import` (see `load` statement).
