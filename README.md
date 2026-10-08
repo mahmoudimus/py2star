@@ -22,10 +22,24 @@ py2star larkify -t ~/src/pycryptodome/lib/Crypto/SelfTest/PublicKey/test_RSA.py 
 `larkify -t` rewrites `unittest` classes and appends a test suite runner.
 `py2star tests file.star` prints just the runner for an existing file.
 
+`larkify` options:
+
+- `-p/--pkg-path PKG` (before `larkify`): the package root, used to turn
+  relative imports into `load("@vendor//pkg/...")`.
+- `--use-mutablestruct`: translate classes to `larky.mutablestruct` instead of
+  `types.new_class`. Needed for `@property`.
+- `--use-error-not-fail`: `raise` returns `Error(...)` instead of calling
+  `fail(...)`.
+- `--unwrap-errors`: `raise` becomes `return Error(...).unwrap()`.
+
 #### Testing against Larky
 
 `tests/e2e/` holds Python programs that are larkified and run in Larky, and
-their output compared with CPython's. They need a JDK and a starlarky build:
+their output compared with CPython's. They need JDK 21 and a starlarky build
+that includes the `format()` built-in
+([#723](https://github.com/verygoodsecurity/starlarky/pull/723); no release
+has it yet, so build `master`). CI pins a starlarky commit in
+`.github/workflows/tests.yml`.
 
 ```bash
 LARKY_JAR=~/src/starlarky/larky/target/larky-1.0.0-SNAPSHOT-jar-with-dependencies.jar pytest tests/test_larky_e2e.py
@@ -34,13 +48,13 @@ LARKY_JAR=~/src/starlarky/larky/target/larky-1.0.0-SNAPSHOT-jar-with-dependencie
 ## Differences with Python
 
 The list of differences between Starlark and Python are documented at https://bazel.build site:
-- [Differences with Python](https://docs.bazel.build/versions/master/skylark/language.html#differences-with-python)
+- [Differences with Python](https://bazel.build/rules/language#differences-with-python)
 - More differences documented as a **W**ork **I**n **P**rogress in [this Github issue](https://github.com/bazelbuild/starlark/pull/158)
 
 
 ### Some High-level Differences
 
-- Global variables are immutable.
+- Global variables are frozen once the module has loaded: functions called after that cannot rebind or mutate them.
 - `for` statements are not allowed at the top-level. Use them within functions instead.
 - `if` statements are not allowed at the top-level. However, `if` expressions can be used: `first = data[0] if len(data) > 0 else None`.
 - Deterministic order for iterating through Dictionaries.
@@ -71,7 +85,8 @@ output matches CPython (see [Testing against Larky](#testing-against-larky)).
   - The output needs only plain `{}` fields (standard Starlark) and a `format()` built-in that follows Python's format spec mini-language, which a host can inject; starlarky has it since [#723](https://github.com/verygoodsecurity/starlarky/pull/723). It does not depend on the host's `%` or on `str.format()` specs, and it runs unchanged in CPython (only `repr()` quoting differs: `'a'` vs `"a"`).
   - Left as `%`: a format string that is not a literal, `%c`, and precision on an integer conversion (`%.3d`). `%a` becomes `repr()` (Starlark has no `ascii()`).
 - [x] Chained comparisons (e.g. `1 < x < 5`).
-- [x] `class` (see `larky.struct` function). `@property` / `@x.setter` need `--use-mutablestruct` (`larky.property`). *verified*
+- [x] `class`: becomes a `types.new_class` call, or a `larky.mutablestruct` constructor with `--use-mutablestruct`. *verified*
+  - `@property` / `@x.setter` need `--use-mutablestruct` (`larky.property`); in `types.new_class` classes, `larky.property` is not yet a descriptor ([#21](https://github.com/mahmoudimus/py2star/issues/21)).
 - [x] `import` (see `load` statement).
 - [x] `while`, including `while/else`; `for/else`. *verified*
 - [x] generators (collected into a list, so they must be finite) and generator expressions. *verified*
