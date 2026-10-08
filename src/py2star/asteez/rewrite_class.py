@@ -307,12 +307,13 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         func_name = updated_node.name.value
         args = []
         for p in itertools.chain(
-            updated_node.params.params,
             updated_node.params.posonly_params,
+            updated_node.params.params,
+            (updated_node.params.star_arg,),
             updated_node.params.kwonly_params,
             (updated_node.params.star_kwarg,),
         ):
-            if not p:
+            if not isinstance(p, cst.Param):
                 continue
             args.append(cst.Arg(value=p.name))
         # self = larky.mutablestruct(__name__='xxxx', __class__=xxxx)
@@ -542,18 +543,17 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
     def _remove_default_values(params: cst.Parameters):
         updated = []
         for p in itertools.chain(
-            params.params,
             params.posonly_params,
+            params.params,
+            (params.star_arg,),
             params.kwonly_params,
             (params.star_kwarg,),
         ):
-            if not p:
+            if not isinstance(p, cst.Param):
                 continue
             # if there's a default value for a parameter, remove it.
-            if p.default is not None and p.equal != cst.MaybeSentinel:
-                p = p.with_deep_changes(
-                    p, default=None, equal=cst.MaybeSentinel
-                )
+            if p.default is not None:
+                p = p.with_changes(default=None, equal=cst.MaybeSentinel.DEFAULT)
             # __init__(x, y, **z)
             if p.star is not None:
                 p = p.with_deep_changes(p, star=None)
@@ -661,8 +661,21 @@ class FunctionParameterStripper(codemod.ContextAwareTransformer):
         self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
     ) -> typing.Union[cst.BaseStatement, cst.RemovalSentinel]:
         params = self.strip_function_params(updated_node.params, self.params)
+        posonly_params = [
+            p
+            for p in updated_node.params.posonly_params
+            if not m.matches(p, m.Param(name=m.OneOf(*self.params)))
+        ]
         return updated_node.with_changes(
-            params=updated_node.params.with_changes(params=params)
+            params=updated_node.params.with_changes(
+                params=params,
+                posonly_params=posonly_params,
+                posonly_ind=(
+                    updated_node.params.posonly_ind
+                    if posonly_params
+                    else cst.MaybeSentinel.DEFAULT
+                ),
+            )
         )
 
     @classmethod
