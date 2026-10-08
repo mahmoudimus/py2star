@@ -37,9 +37,9 @@ py2star larkify -t ~/src/pycryptodome/lib/Crypto/SelfTest/PublicKey/test_RSA.py 
 `tests/e2e/` holds Python programs that are larkified and run in Larky, and
 their output compared with CPython's. They need JDK 21 and a starlarky build
 that includes the `format()` built-in
-([#723](https://github.com/verygoodsecurity/starlarky/pull/723); no release
-has it yet, so build `master`). CI pins a starlarky commit in
-`.github/workflows/tests.yml`.
+([#723](https://github.com/verygoodsecurity/starlarky/pull/723)), which ships
+in Larky 1.0.0; until that release, build `master`. CI pins a starlarky commit
+in `.github/workflows/tests.yml`.
 
 ```bash
 LARKY_JAR=~/src/starlarky/larky/target/larky-1.0.0-SNAPSHOT-jar-with-dependencies.jar pytest tests/test_larky_e2e.py
