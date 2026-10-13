@@ -56,14 +56,13 @@ def transform_passes(
         desugar.UnpackTargetAssignments(context),
         desugar.DesugarDecorators(
             context,
+            # property and .setter are left for the class rewriter, which
+            # turns them into larky.property
             exclude_decorators=(
-                "staticmethod",
-                "classmethod",
-                "property",
-                ".setter",
-            )
-            if options.use_mutablestruct
-            else None,
+                ("staticmethod", "classmethod", "property", ".setter")
+                if options.use_mutablestruct
+                else ("property", ".setter")
+            ),
         ),
         desugar.DesugarBuiltinOperators(context),
         desugar.DesugarSetSyntax(context),

@@ -485,18 +485,47 @@ def test_mutablestruct_init_removes_self_only_posonly_group():
     assert "self = __init__(start)" in code
 
 
-def test_property_without_mutablestruct_is_flagged():
+def test_property_with_new_class():
     code = larkify(
         """
-        class Foo(object):
+        class Temp(object):
             @property
             def name(self):
                 return 1
+
+            @property
+            def celsius(self):
+                return self._c
+
+            @celsius.setter
+            def celsius(self, v):
+                self._c = v
         """
     )
-    assert "# PY2LARKY: properties need --use-mutablestruct" in code
-    # one namespace entry per name: Starlark rejects duplicate dict keys
+    assert "def _get_name(self):" in code
+    assert "name = larky.property(_get_name)\n" in code
+    assert "def _get_celsius(self):" in code
+    assert "def _set_celsius(self, v):" in code
+    assert "celsius = larky.property(_get_celsius, _set_celsius)\n" in code
+    assert "@property" not in code and ".setter" not in code
+    assert "PY2LARKY" not in code
+    assert 'load("@stdlib//larky", larky="larky")' in code
+    # one namespace entry per property, none for the renamed accessors
     assert code.count("'name': name,") == 1
+    assert code.count("'celsius': celsius,") == 1
+    assert "'_get_" not in code and "'_set_" not in code
+
+
+def test_setter_without_getter_in_class_is_flagged():
+    code = larkify(
+        """
+        class Child(Base):
+            @name.setter
+            def name(self, v):
+                self._n = v
+        """
+    )
+    assert "# PY2LARKY: setter for name has no getter in this class" in code
 
 
 def test_class_namespace_skips_nested_functions():

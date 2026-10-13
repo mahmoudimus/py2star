@@ -23,13 +23,14 @@ jobs:
   # Larkify tests/e2e/*.py, run the output in Larky and compare it with
   # CPython's. Larky is built from source: the release binaries cannot load
   # @stdlib//larky. Translated string formatting needs the format()
-  # built-in (starlarky #723), which ships in Larky 1.0.0; pin a master
-  # commit until that release, then switch to the tag.
+  # built-in (starlarky #723), and properties in types.new_class classes need
+  # larky.property to be a descriptor (#770); both ship in Larky 1.0.0. Pin a
+  # master commit until that release, then switch to the tag.
   larky:
     runs-on: ubuntu-latest
     env:
       STARLARKY_REPO: verygoodsecurity/starlarky
-      STARLARKY_REF: b0d93f7c980b09f317486545a823454add45265b  # master, 2026-10-06
+      STARLARKY_REF: 045014db73b2c55038db4ade4675e9cc7bb32d29  # master, 2026-10-13 (#770)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

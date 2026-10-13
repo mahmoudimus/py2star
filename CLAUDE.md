@@ -33,7 +33,7 @@ py2star defs file.py                                # list function definitions
 
 `larkify` flags:
 - `-p/--pkg-path`: package root. Without it, relative imports become `@vendor///name` with a warning on stderr.
-- `--use-mutablestruct`: translate classes to `larky.mutablestruct` instead of `types.new_class`. Needed for `@property`.
+- `--use-mutablestruct`: translate classes to `larky.mutablestruct` instead of `types.new_class`.
 - `--use-error-not-fail`: `raise` becomes `return Error(...)` instead of `fail(...)`. Raises inside a `try` body always raise.
 - `--unwrap-errors`: `raise` becomes `return Error(...).unwrap()`.
 

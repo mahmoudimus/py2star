@@ -334,21 +334,6 @@ class DesugarDecorators(codemod.ContextAwareTransformer):
         result = cst.SimpleStatementLine(
             body=[cst.Assign(targets=[cst.AssignTarget(target=fn_name)], value=fn)]
         )
-        if any(
-            m.matches(d.decorator, m.Name("property"))
-            for d in updated_node.decorators
-            if d not in kept
-        ):
-            result = result.with_changes(
-                leading_lines=[
-                    cst.EmptyLine(
-                        comment=cst.Comment(
-                            "# PY2LARKY: properties need --use-mutablestruct "
-                            "(larky.property)"
-                        )
-                    )
-                ]
-            )
         undecorated = updated_node.with_changes(decorators=kept)
         return cst.FlattenSentinel([undecorated, result])
 

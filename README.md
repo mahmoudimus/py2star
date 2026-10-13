@@ -27,7 +27,7 @@ py2star larkify -t ~/src/pycryptodome/lib/Crypto/SelfTest/PublicKey/test_RSA.py 
 - `-p/--pkg-path PKG` (before `larkify`): the package root, used to turn
   relative imports into `load("@vendor//pkg/...")`.
 - `--use-mutablestruct`: translate classes to `larky.mutablestruct` instead of
-  `types.new_class`. Needed for `@property`.
+  `types.new_class`.
 - `--use-error-not-fail`: `raise` returns `Error(...)` instead of calling
   `fail(...)`.
 - `--unwrap-errors`: `raise` becomes `return Error(...).unwrap()`.
@@ -86,7 +86,7 @@ output matches CPython (see [Testing against Larky](#testing-against-larky)).
   - Left as `%`: a format string that is not a literal, `%c`, and precision on an integer conversion (`%.3d`). `%a` becomes `repr()` (Starlark has no `ascii()`).
 - [x] Chained comparisons (e.g. `1 < x < 5`).
 - [x] `class`: becomes a `types.new_class` call, or a `larky.mutablestruct` constructor with `--use-mutablestruct`. *verified*
-  - `@property` / `@x.setter` need `--use-mutablestruct` (`larky.property`); in `types.new_class` classes, `larky.property` is not yet a descriptor ([#21](https://github.com/mahmoudimus/py2star/issues/21)).
+  - `@property` / `@x.setter` become `larky.property` in both modes. With `types.new_class` this needs a starlarky where `larky.property` is a descriptor ([#770](https://github.com/verygoodsecurity/starlarky/pull/770)).
 - [x] `import` (see `load` statement).
 - [x] `while`, including `while/else`; `for/else`. *verified*
 - [x] generators (collected into a list, so they must be finite) and generator expressions. *verified*
