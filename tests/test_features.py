@@ -728,3 +728,55 @@ def test_tests_mode_translates_helper_classes():
     # nested functions and top-level functions keep their names
     assert "def chunk(x):" in code
     assert "def standalone(self):" in code
+
+
+def test_encode_rewrite_uses_receiver_type():
+    """A receiver known to be a str accepts any str.encode-shaped call; one
+    known not to be a str never matches; otherwise the literal rule holds."""
+    code = larkify(
+        """
+        from jose import jwt
+
+        class Codec(object):
+            def encode(self, value, sep):
+                return value
+
+        def f(y, enc, flag, maybe, x2: str):
+            x = "abc"
+            a = x.encode(enc)
+            b = str(y).encode(enc, "ignore")
+            c = x2.encode(enc)
+            if flag:
+                z = "s"
+            else:
+                z = y
+            d = z.encode(enc)
+            if flag:
+                q = "s"
+            else:
+                q = "t" + y
+            e = q.encode(enc)
+            k = Codec()
+            g = k.encode("utf-8", "strict")
+            num = 3
+            h = num.encode("utf-8")
+            i = jwt.encode(enc)
+            j = maybe.encode("utf-8")
+            l = maybe.encode(enc)
+            return a, b, c, d, e, g, h, i, j, l
+        """
+    )
+    # known str: any str.encode-shaped call
+    assert "a = codecs.encode(x, encoding=enc)" in code
+    assert 'b = codecs.encode(str(y), encoding=enc, errors="ignore")' in code
+    assert "c = codecs.encode(x2, encoding=enc)" in code
+    assert "e = codecs.encode(q, encoding=enc)" in code
+    # one branch is not known to be a str
+    assert "d = z.encode(enc)" in code
+    # known not str: never
+    assert 'g = k.encode("utf-8", "strict")' in code
+    assert 'h = num.encode("utf-8")' in code
+    assert "i = jwt.encode(enc)" in code
+    # unknown: only literal codec arguments
+    assert 'j = codecs.encode(maybe, encoding="utf-8")' in code
+    assert "l = maybe.encode(enc)" in code

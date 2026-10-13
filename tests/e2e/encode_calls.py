@@ -13,6 +13,12 @@ def main():
     print(c.encode("v", ":"))
     data = "hello".encode("utf-8")
     print(len(data), data == "hello".encode(), data == b"hello")
+    # an instance of Codec: never str.encode, even with codec-like literals
+    print(c.encode("utf-8", "strict"))
+    # a known str with a variable encoding
+    enc = "utf-8"
+    text = "a" + str(7)
+    print(text.encode(enc) == b"a7")
 
 
 main()
