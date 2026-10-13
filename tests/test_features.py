@@ -862,3 +862,89 @@ def test_loads_kept_in_import_only_modules(source, expected):
     """Modules made only of imports (re-export __init__.py files) used to
     lose every load, and a docstring was duplicated."""
     assert pipeline.larkify(source).code.strip() == expected
+
+
+def test_tests_mode_keeps_testcase_state():
+    """setUp state, helper methods and tearDown work: the TestCase becomes a
+    mutablestruct constructor and each test a wrapper around a fresh one."""
+    code = larkify(
+        """
+        import unittest
+
+        class T(unittest.TestCase):
+            def setUp(self):
+                self.x = 1
+
+            def helper(self, n):
+                return n + self.x
+
+            def test_x(self):
+                self.assertEqual(self.helper(1), 2)
+
+            def tearDown(self):
+                self.x = None
+        """,
+        for_tests=True,
+    )
+    assert "self = larky.mutablestruct(__name__='T', __class__=T)" in code
+    assert "    def setUp():\n        self.x = 1\n" in code
+    assert "asserts.assert_that(self.helper(1)).is_equal_to(2)" in code
+    assert (
+        "def T_test_x():\n"
+        "    _t = T()\n"
+        "    _t.setUp()\n"
+        "    _r = Result.Ok(None).map(lambda _: _t.test_x())\n"
+        "    _t.tearDown()\n"
+        "    _r.unwrap()\n"
+    ) in code
+
+
+def test_warnings_become_prints():
+    code = larkify(
+        """
+        import warnings
+        from warnings import warn as w
+
+        def f(msg):
+            warnings.warn("careful")
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
+            w("aliased", category=RuntimeWarning)
+            warnings.simplefilter("ignore")
+        """
+    )
+    assert "warnings" not in code.replace('warnings.simplefilter("ignore") has no', "")
+    assert 'print("UserWarning: careful")' in code
+    assert 'print("DeprecationWarning: " + str(msg))' in code
+    assert 'print("RuntimeWarning: aliased")' in code
+    assert '# PY2LARKY: warnings.simplefilter("ignore") has no Larky equivalent' in code
+
+
+def test_mutablestruct_constructor_order():
+    """self exists before any method is attached, class attributes are set on
+    self, and __init__ runs after every method exists."""
+    code = larkify(
+        """
+        class A(object):
+            LIMIT = 3
+
+            def helper(self):
+                return self.LIMIT
+
+            def __init__(self, n):
+                self.n = self.later(n)
+
+            def later(self, n):
+                return n
+
+        class NoInit(object):
+            def m(self):
+                return 1
+        """,
+        use_mutablestruct=True,
+    )
+    a = code[code.index("def A("):code.index("def NoInit(")]
+    assert a.index("self = larky.mutablestruct") < a.index("def helper")
+    assert "    LIMIT = 3\n    self.LIMIT = LIMIT\n" in a
+    assert a.index("self.later = later") < a.index("self = __init__(n)") < a.rindex("return self")
+    assert "self = larky.mutablestruct(__name__='NoInit', __class__=NoInit)" in code
+    assert code.count('load("@stdlib//larky"') == 1

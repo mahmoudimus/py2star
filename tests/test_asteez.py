@@ -266,10 +266,20 @@ def compare(x, y):
     rewritten = tree.visit(rwcc)
     expected = """
 def compare(x, y):
-    if (1 < x) and (x <= y) and (y < 10):
+    if ((1 < x) and (x <= y) and (y < 10)):
         return True
 """
     assert expected.strip() == rewritten.code.strip()
+
+
+def test_unchain_comparison_under_not():
+    # `not a <= b <= c` negates the whole chain, not just its first comparison
+    tree = cst.parse_module("ok = not 4 <= cost <= 31\nalso = not (1 < x < 2)\n")
+    rewritten = tree.visit(rewrite_comparisons.UnchainComparison(CodemodContext()))
+    assert rewritten.code == (
+        "ok = not ((4 <= cost) and (cost <= 31))\n"
+        "also = not ((1 < x) and (x < 2))\n"
+    )
 
 
 def test_is_comparison_transformer():
@@ -920,7 +930,6 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
             def __init__(x, y, z):
                 pass
                 return self
-            self = __init__(x, y, z)
 
             def foo(one, two=2):
                 pass
@@ -929,6 +938,7 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
             def doit(a, b):
                 pass
             self.doit = doit
+            self = __init__(x, y, z)
             return self
         """
         self.assertCodemod(
@@ -1423,38 +1433,63 @@ class TestUnittest2Functions(MetadataResolvingCodemodTest):
     TRANSFORM = rewrite_tests.Unittest2Functions
 
     def test_rewrite_simple_class(self):
+        # the TestCase is kept (the class rewriter turns it into a
+        # mutablestruct constructor) and each test gets a wrapper
         before = """
         class B(unittest.TestCase):
             foo = 'manchu'
-            bar = []
-        
+
             def test_do_baz(self):
                 self.assertEqual(1, 1)
-        
-            def test_do_it_again(self):
-                # do something
-                bar2 = [int(x) for x in self.bar]
-                self.assertEqual(bar2, map(int, self.bar))
         """
-
         after = """
-        foo = 'manchu'
-        bar = []
-        
-        def B_test_do_baz():
-            asserts.assert_that(1).is_equal_to(1)
-        
-        def B_test_do_it_again():
-            # do something
-            bar2 = [int(x) for x in bar]
-            asserts.assert_that(bar2).is_equal_to(map(int, bar))"""
-        # lets re-write the assert statements
-        ctx = TestAssertStatementRewriter()._get_context_override(before)
-        rewriter = rewrite_tests.UnittestAssertMethodsRewriter(ctx)
-        before = ctx.module.visit(rewriter).code
-        ctx = self._get_context_override(before)
-        self.assertCodemod(before, after, context_override=ctx)
+        class B(unittest.TestCase):
+            foo = 'manchu'
 
+            def test_do_baz(self):
+                self.assertEqual(1, 1)
+        def B_test_do_baz():
+            _t = B()
+            _t.test_do_baz()
+        """
+        self.assertCodemod(before, after)
+
+    def test_setup_and_teardown(self):
+        before = """
+        class T(TestCase):
+            def setUp(self):
+                self.x = 1
+
+            def test_x(self):
+                pass
+
+            def tearDown(self):
+                self.x = None
+
+            def helper(self):
+                pass
+        """
+        after = """
+        class T(TestCase):
+            def setUp(self):
+                self.x = 1
+
+            def test_x(self):
+                pass
+
+            def tearDown(self):
+                self.x = None
+
+            def helper(self):
+                pass
+        def T_test_x():
+            _t = T()
+            _t.setUp()
+            _r = Result.Ok(None).map(lambda _: _t.test_x())
+            _t.tearDown()
+            _r.unwrap()
+        """
+        self.assertCodemod(before, after)
 
 @pytest.mark.usefixtures("simple_class_before")
 class TestUnittestAssertMethodsRewriter(MetadataResolvingCodemodTest):

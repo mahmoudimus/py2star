@@ -31,7 +31,7 @@ class UnchainComparison(codemod.ContextAwareTransformer):
       Example:
           1 < x <= y < 10
       Becomes:
-          (1 < x) and (x <= y) and (y < 10)
+          ((1 < x) and (x <= y) and (y < 10))
 
     """
 
@@ -68,6 +68,11 @@ class UnchainComparison(codemod.ContextAwareTransformer):
         # noinspection PyTypeChecker
         new_node: cst.BooleanOperation = reduce(
             build_comparison_tree, ands[1:], ands[0]
+        )
+        # keep the chain one operand: `not a < b < c` must negate all of it
+        new_node = new_node.with_changes(
+            lpar=updated_node.lpar or [cst.LeftParen()],
+            rpar=updated_node.rpar or [cst.RightParen()],
         )
         return updated_node.deep_replace(updated_node, new_node)
 
