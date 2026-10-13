@@ -22,6 +22,8 @@ from libcst import (
 )
 import libcst.matchers as m
 from libcst.codemod.visitors import AddImportsVisitor
+from libcst.helpers import get_full_name_for_node
+from py2star.asteez.remove_exceptions import RemoveExceptions
 from libcst.metadata import (
     ParentNodeProvider,
     QualifiedNameProvider,
@@ -560,6 +562,109 @@ class DesugarSetSyntax(codemod.ContextAwareTransformer):
         )
 
 
+class RewriteWarnings(codemod.ContextAwareTransformer):
+    """
+    Larky has no warnings module:
+
+        import warnings
+        warnings.warn("careful", DeprecationWarning)
+        warnings.simplefilter("ignore")
+
+    becomes:
+
+        print("DeprecationWarning: careful")
+        # PY2LARKY: warnings.simplefilter("ignore") has no Larky equivalent
+        pass
+
+    warn() prints "Category: message", as Python's default handler does
+    (UserWarning when no category is given). Other warnings.* calls used as
+    statements are commented out; the import is dropped.
+    """
+
+    METADATA_DEPENDENCIES = (QualifiedNameProvider,)
+
+    def _qualified(self, node: cst.BaseExpression) -> typing.Set[str]:
+        return {
+            q.name
+            for q in self.get_metadata(QualifiedNameProvider, node, set())
+            if q.source == QualifiedNameSource.IMPORT
+        }
+
+    def leave_Call(self, original_node: cst.Call, updated_node: cst.Call):
+        if "warnings.warn" not in self._qualified(original_node.func):
+            return updated_node
+        args = updated_node.args
+        message = next((a.value for a in args if not a.keyword or a.keyword.value == "message"), None)
+        category = next(
+            (
+                a.value
+                for i, a in enumerate(args)
+                if (a.keyword and a.keyword.value == "category")
+                or (not a.keyword and i == 1)
+            ),
+            None,
+        )
+        if message is None:
+            return updated_node
+        label = "UserWarning"
+        if isinstance(category, cst.Name):
+            label = category.value
+        elif isinstance(category, cst.Attribute):
+            label = category.attr.value
+        if isinstance(message, cst.SimpleString) and "b" not in message.prefix.lower():
+            text = message.with_changes(
+                value=f"{message.prefix}{message.quote}{label}: "
+                f"{message.raw_value}{message.quote}"
+            )
+        else:
+            if not RemoveExceptions._is_str_expr(message):
+                message = cst.Call(func=cst.Name("str"), args=[cst.Arg(message)])
+            text = cst.BinaryOperation(
+                left=cst.SimpleString(f'"{label}: "'),
+                operator=cst.Add(),
+                right=message,
+            )
+        return cst.Call(func=cst.Name("print"), args=[cst.Arg(text)])
+
+    def leave_SimpleStatementLine(self, original_node, updated_node):
+        # warnings.simplefilter(...) and friends, as statements
+        if len(original_node.body) != 1 or not m.matches(
+            original_node.body[0], m.Expr(m.Call())
+        ):
+            return updated_node
+        names = self._qualified(original_node.body[0].value.func)
+        if not any(n.startswith("warnings.") and n != "warnings.warn" for n in names):
+            return updated_node
+        code = cst.Module([]).code_for_node(original_node.body[0])
+        return updated_node.with_changes(
+            body=[cst.Pass()],
+            leading_lines=[
+                *updated_node.leading_lines,
+                cst.EmptyLine(
+                    comment=cst.Comment(
+                        f"# PY2LARKY: {code} has no Larky equivalent"
+                    )
+                ),
+            ],
+        )
+
+    def leave_Import(self, original_node, updated_node):
+        names = [a for a in updated_node.names if get_full_name_for_node(a.name) != "warnings"]
+        if len(names) == len(updated_node.names):
+            return updated_node
+        if not names:
+            return cst.RemoveFromParent()
+        names[-1] = names[-1].with_changes(comma=cst.MaybeSentinel.DEFAULT)
+        return updated_node.with_changes(names=names)
+
+    def leave_ImportFrom(self, original_node, updated_node):
+        if updated_node.module is not None and not updated_node.relative and (
+            get_full_name_for_node(updated_node.module) == "warnings"
+        ):
+            return cst.RemoveFromParent()
+        return updated_node
+
+
 class RewriteBuiltins(codemod.ContextAwareTransformer):
     """
     Python builtins that Starlark lacks:
@@ -627,7 +732,7 @@ class RewriteBuiltins(codemod.ContextAwareTransformer):
             AddImportsVisitor.add_needed_import(self.context, "sets", "Set")
             return updated_node.with_changes(func=cst.Name("Set"))
         if self._is_builtin(func, "issubclass"):
-            AddImportsVisitor.add_needed_import(self.context, "larky")
+            AddImportsVisitor.add_needed_import(self.context, "larky", "larky")
             return updated_node.with_changes(
                 func=cst.parse_expression("larky.is_subclass")
             )
@@ -635,7 +740,7 @@ class RewriteBuiltins(codemod.ContextAwareTransformer):
             m.matches(func, m.Attribute(value=m.Name("dict"), attr=m.Name("fromkeys")))
             and self._is_builtin(func.value, "dict")
         ):
-            AddImportsVisitor.add_needed_import(self.context, "larky")
+            AddImportsVisitor.add_needed_import(self.context, "larky", "larky")
             return updated_node.with_changes(
                 func=cst.parse_expression("larky.dicts.fromkeys")
             )

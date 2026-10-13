@@ -67,6 +67,7 @@ def transform_passes(
         desugar.DesugarBuiltinOperators(context),
         desugar.DesugarSetSyntax(context),
         desugar.RewriteBuiltins(context),
+        desugar.RewriteWarnings(context),
         remove_exceptions.CommentTopLevelTryBlocks(context),
         desugar.RemoveDelKeyword(context),
         desugar.RewriteSliceAssignment(context),
@@ -89,7 +90,15 @@ def transform_passes(
         passes += [
             rewrite_tests.UnittestAssertMethodsRewriter(context),
             rewrite_tests.Unittest2Functions(context),
-            # classes that are not TestCases (helpers) become functions too
+            # TestCases become larky.mutablestruct constructors, which the
+            # test wrappers instantiate
+            rewrite_class.ClassToFunctionRewriter(
+                context,
+                remove_decorators=False,
+                use_mutablestruct=True,
+                class_filter=rewrite_tests.TESTCASE_CLASS,
+            ),
+            # other classes (helpers) as usual
             rewrite_class.ClassToFunctionRewriter(
                 context,
                 remove_decorators=False,

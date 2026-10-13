@@ -50,11 +50,14 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         namespace_defs=False,
         remove_decorators=False,
         use_mutablestruct=False,
+        class_filter=None,
     ) -> None:
         super(ClassToFunctionRewriter, self).__init__(context)
         self.namespace_defs = namespace_defs
         self.remove_decorators = remove_decorators
         self.use_mutablestruct = use_mutablestruct
+        # a matcher: only classes it matches are rewritten
+        self.class_filter = class_filter
         self.stack = []
         # self.parent_class = None
         # self.init_params = None
@@ -95,11 +98,17 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         self.stack[-1]["init_params"] = val
 
     def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
+        skip = self.class_filter is not None and not m.matches(
+            node, self.class_filter
+        )
         self.stack.append(
             {
-                "parent_class": node,
+                # a skipped class has no parent_class, so its methods and
+                # attributes are left alone too
+                "parent_class": None if skip else node,
                 "init_params": None,
                 "ns": [],
+                "skip": skip,
             }
         )
         return True
@@ -214,7 +223,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         accessors = [f"_get_{name}"] + (
             [f"_set_{name}"] if prop == "setter" else []
         )
-        AddImportsVisitor.add_needed_import(self.context, "larky")
+        AddImportsVisitor.add_needed_import(self.context, "larky", "larky")
         self.ns.append(name)
         return cst.FlattenSentinel(
             [
@@ -266,10 +275,14 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             self.init_params = updated_node.params
             params = self._remove_default_values(updated_node.params)
             (
-                before,
+                _,
                 updated_node,
-                self_func_assign,
+                init_call,
             ) = self._emulate_class_construction(updated_node)
+            # `self = __init__(...)` runs after every method is attached
+            # (leave_ClassDef), so __init__ can call methods defined later
+            self.stack[-1]["init_call"] = init_call
+            before = self_func_assign = None
             prefixer = PrefixMethodByClsName(
                 self.context, self.class_name, excluded_methods=("__init__",)
             )
@@ -288,7 +301,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             self_func_assign = cst.parse_statement(
                 f"self.{name} = larky.property({', '.join(accessors)})"
             )
-            AddImportsVisitor.add_needed_import(self.context, "larky")
+            AddImportsVisitor.add_needed_import(self.context, "larky", "larky")
 
         results: typing.List[typing.Any] = [before] if before else []
 
@@ -297,7 +310,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             params=params,
         )
         results.append(n)
-        if self.class_name:
+        if self.class_name and self_func_assign is not None:
             results.append(self_func_assign)
 
         return cst.FlattenSentinel(results)
@@ -482,6 +495,9 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         #     if self.init_params
         #     else cst.Parameters()
         # )
+        if self.stack[-1].get("skip"):
+            self.stack.pop()
+            return updated_node
         params = cst.Parameters()
         if self.init_params:
             params = self.init_params
@@ -491,7 +507,7 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         #     params, params.with_changes(star_arg=cst.MaybeSentinel.DEFAULT)
         # )
         if self.use_mutablestruct:
-            body = self.append_return_self_to_body(updated_node)
+            body = self.mutablestruct_body(updated_node)
         else:
             body = self.create_dynamic_class(updated_node)
         # must clear out the parent class for future runs
@@ -567,6 +583,55 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
             footer=block.footer,
             header=block.header,
         )
+
+    def mutablestruct_body(self, updated_node: cst.ClassDef) -> cst.IndentedBlock:
+        """
+        The constructor body, in this order:
+
+            def Foo(params):
+                \"\"\"docstring\"\"\"
+                self = larky.mutablestruct(__name__='Foo', __class__=Foo)
+                X = 1
+                self.X = X              # class attributes, on self too
+                def m(): ...
+                self.m = m
+                self = __init__(params) # after every method exists
+                return self
+        """
+        AddImportsVisitor.add_needed_import(self.context, "larky", "larky")
+        name = updated_node.name.value
+        block: cst.IndentedBlock = updated_node.body
+        statements = list(block.body)
+        docstring = (
+            statements[:1]
+            if statements
+            and m.matches(
+                statements[0], m.SimpleStatementLine([m.Expr(m.SimpleString())])
+            )
+            else []
+        )
+        body = docstring + [
+            cst.parse_statement(
+                f"self = larky.mutablestruct(__name__='{name}', __class__={name})"
+            )
+        ]
+        for stmt in statements[len(docstring):]:
+            body.append(stmt)
+            # class attributes: X = 1 => also self.X = X
+            if m.matches(
+                stmt,
+                m.SimpleStatementLine(
+                    [m.Assign(targets=[m.AtLeastN(m.AssignTarget(m.Name()), n=1)])]
+                ),
+            ):
+                for target in stmt.body[0].targets:
+                    attr = target.target.value
+                    body.append(cst.parse_statement(f"self.{attr} = {attr}"))
+        init_call = self.stack[-1].get("init_call")
+        if init_call is not None:
+            body.append(init_call)
+        body.append(cst.parse_statement("return self"))
+        return block.with_changes(body=body)
 
     @staticmethod
     def append_return_self_to_body(updated_node):

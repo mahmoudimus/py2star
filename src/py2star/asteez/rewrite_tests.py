@@ -1,7 +1,6 @@
 import binascii
 import re
 import uuid
-import typing
 
 from dataclasses import dataclass
 from functools import partial
@@ -11,7 +10,6 @@ from typing import Callable, List, Union
 import libcst as cst
 import libcst.codemod
 from libcst import codemod
-from libcst.codemod import CodemodContext
 import libcst.matchers as m
 from libcst import (
     BaseStatement,
@@ -21,12 +19,6 @@ from libcst import (
 )
 from libcst.codemod.visitors import AddImportsVisitor, RemoveImportsVisitor
 
-from py2star.asteez.rewrite_class import (
-    ClassInstanceVariableRemover,
-    FunctionParameterStripper,
-    PrefixMethodByClsName,
-    UndecorateClassMethods,
-)
 
 
 OPERATOR_TABLE = {
@@ -356,7 +348,7 @@ class UnittestAssertMethodsRewriter(cst.codemod.ContextAwareTransformer):
 
 
 # class Foo(unittest.TestCase) / class Foo(TestCase)
-_TESTCASE = m.ClassDef(
+TESTCASE_CLASS = m.ClassDef(
     bases=[
         m.AtLeastN(
             n=1,
@@ -373,115 +365,70 @@ _TESTCASE = m.ClassDef(
 )
 
 
-class DedentModule(codemod.ContextAwareTransformer):
-    def leave_Module(
-        self, original_node: "cst.Module", updated_node: "cst.Module"
-    ) -> "cst.Module":
-
-        module_body = []
-        for stmt in updated_node.body:
-            if not m.matches(stmt, m.ClassDef()):
-                module_body.append(stmt)
-                continue
-            classdef = cst.ensure_type(stmt, cst.ClassDef)
-            if not m.matches(classdef, _TESTCASE):
-                # not a TestCase: left for ClassToFunctionRewriter, which
-                # runs after this as its own pass (it needs scope metadata,
-                # which a bare classdef.visit() does not resolve)
-                module_body.append(classdef)
-                continue
-            # here is where we start on the indent blocks
-            indentedbody = cst.ensure_type(classdef.body, cst.IndentedBlock)
-            module_body.extend([b for b in indentedbody.body])
-            #
-            # try:
-            #     indentedbody = cst.ensure_type(classdef.body, cst.IndentedBlock)
-            # except Exception:
-            #     module_body.append(classdef)
-            # else:
-            #     module_body.extend([b for b in indentedbody.body])
-            # module_body.append(deindented_body)
-        if module_body:
-            return updated_node.with_changes(body=module_body)
-        return updated_node
-
-
 class Unittest2Functions(codemod.ContextAwareTransformer):
     """
-    For all functions in a class, this will:
-    - Strip self from functions in classes => (def z(self) => def(z))
-    - Strip class instance variables (self.foo => foo)
-    - Prefix method with class name (class Foo: def bar().. => def Foo__bar())
+    Larky's unittest runs plain functions (unittest.FunctionTestCase takes no
+    setUp/tearDown), so a TestCase becomes an object plus one wrapper per
+    test method:
 
-    For entire module:
-    - dedents it
+        class T(unittest.TestCase):
+            def setUp(self): self.x = 1
+            def test_x(self): ...
+            def tearDown(self): ...
+
+    keeps the class (the pipeline then translates it as a larky.mutablestruct
+    constructor, so self.x, helpers and setUp state work as in Python) and
+    adds:
+
+        def T_test_x():
+            _t = T()
+            _t.setUp()
+            _r = Result.Ok(None).map(lambda _: _t.test_x())
+            _t.tearDown()       # runs even when the test fails
+            _r.unwrap()         # then the failure is raised
+
+    Each test gets a fresh instance, as unittest does. setUpClass and
+    tearDownClass are not run.
     """
 
-    def __init__(self, context: CodemodContext, class_name=None):
-        super(Unittest2Functions, self).__init__(context)
-        self.class_name = class_name
-        self.class_bases = None
-        # [is_testcase, name, function depth] per enclosing class
-        self._classes = []
-
-    def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
-        self.class_name = node.name.value
-        self.class_bases = node.bases
-        self._classes.append([m.matches(node, _TESTCASE), node.name.value, 0])
-        return True
-
     def leave_ClassDef(self, original_node, updated_node):
-        self._classes.pop()
-        return updated_node
-
-    def visit_FunctionDef(self, node: cst.FunctionDef) -> typing.Optional[bool]:
-        if self._classes:
-            self._classes[-1][2] += 1
-        return True
-
-    # def leave_ClassDef(
-    #     self, original_node: "cst.ClassDef", updated_node: "cst.ClassDef"
-    # ) -> typing.Union[
-    #     "cst.BaseStatement",
-    #     cst.FlattenSentinel["cst.BaseStatement"],
-    #     cst.RemovalSentinel,
-    # ]:
-    #     rewriter = ClassToFunctionRewriter(
-    #         self.context, namespace_defs=True, remove_decorators=True
-    #     )
-    #     return updated_node.visit(rewriter)
-
-    def leave_FunctionDef(
-        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
-    ) -> typing.Union[
-        cst.BaseStatement,
-        cst.FlattenSentinel[cst.BaseStatement],
-        cst.RemovalSentinel,
-    ]:
-        if not self._classes:
+        if not m.matches(updated_node, TESTCASE_CLASS):
             return updated_node
-        is_testcase, class_name, depth = self._classes[-1]
-        self._classes[-1][2] -= 1
-        if not is_testcase or depth != 1:
-            # helper classes are left for ClassToFunctionRewriter, and
-            # functions nested in a test method keep their names
-            return updated_node
-        un = updated_node.visit(
-            FunctionParameterStripper(self.context, ["self"])
-        )
-        un = un.visit(ClassInstanceVariableRemover(self.context, ["self"]))
-        un = un.visit(UndecorateClassMethods(self.context))
-        un = un.visit(PrefixMethodByClsName(self.context, class_name))
-        return un
+        name = updated_node.name.value
+        methods = [
+            stmt.name.value
+            for stmt in updated_node.body.body
+            if isinstance(stmt, cst.FunctionDef)
+        ]
+        wrappers = []
+        for test in (n for n in methods if n.startswith("test")):
+            lines = [f"_t = {name}()"]
+            if "setUp" in methods:
+                lines.append("_t.setUp()")
+            if "tearDown" in methods:
+                AddImportsVisitor.add_needed_import(
+                    self.context, "option.result", "Result"
+                )
+                lines += [
+                    f"_r = Result.Ok(None).map(lambda _: _t.{test}())",
+                    "_t.tearDown()",
+                    "_r.unwrap()",
+                ]
+            else:
+                lines.append(f"_t.{test}()")
+            wrappers.append(
+                cst.parse_statement(
+                    f"def {name}_{test}():\n"
+                    + "".join(f"    {line}\n" for line in lines)
+                )
+            )
+        return cst.FlattenSentinel([updated_node, *wrappers])
 
     def leave_Module(
         self, original_node: "cst.Module", updated_node: "cst.Module"
     ) -> "cst.Module":
-        # TestCase
         RemoveImportsVisitor.remove_unused_import(
             self.context, "unittest", asname="TestCase"
         )
         AddImportsVisitor.add_needed_import(self.context, "unittest")
-        # return updated_node
-        dedenter = DedentModule(self.context)
-        return updated_node.visit(dedenter)
+        return updated_node
