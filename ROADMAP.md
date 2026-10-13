@@ -1,206 +1,84 @@
- # Roadmap
+# Roadmap
 
-### String Formatting
+What py2star still gets wrong or leaves untranslated, checked against
+starlarky `master` (`045014db`). Each open item fails today, either in
+py2star's output or when that output runs in Larky.
 
-- `return "".join(["%02x" % bord(x) for x in self.digest()])` "%02x" is not supported :(
-- `larky.strings.zfill`
-- `if not (4 <= cost) and (cost <= 31)` => `if not ((4 <= cost) and (cost <= 31))`
-- `int(b'1', 2)`
+## Open bugs
 
-## Error Parameters
+Wrong output from py2star:
 
-The following:
+- [ ] Slice assignment and slice deletion (`elem[:] = other`, `del x[i:j]`)
+  are rewritten as in-place list operations, which assumes a list: an object
+  with its own `__setitem__`/`__delitem__` gets list operations instead, and
+  stepped slices (`x[::2] = ...`) aren't translated. Waiting on a `slice`
+  built-in in starlarky, so py2star can emit
+  `operator.setitem(x, slice(i, j), v)`.
 
-```python
-raise Exception(
-    "Ambiguous reference URI {} resolved to {} nodes".format(
-        uri, len(results)
-    )
-)
-```
+## Python that py2star leaves as is, and Larky rejects
 
-gets converted to:
-```python
-return Error()
-```
+- [ ] `with ... as ...` statements.
+- [ ] Classes derived from built-in exceptions (`class ParseError(SyntaxError)`):
+  Larky has no `SyntaxError` class. One option is a function returning
+  `Error("ParseError: ...")`.
+- [ ] `type(x).__name__`: in Larky, `type(x)` is a string such as `"string"`,
+  so `type(x)` alone is the equivalent.
+- [ ] `int(b"101", 2)`: Larky's `int` takes a base only for strings
+  (`int("101", 2)` works).
+- [ ] An attribute named `load` (`x.load()`): `load` is a Starlark keyword,
+  so this doesn't parse.
+- [ ] `global`: removed and flagged with a `# PY2LARKY:` comment, because
+  module globals are frozen once a Starlark module has loaded.
+- [ ] `%`-format precision on integer conversions (`"%.3d" % n`), `%c`, and
+  `%` with a format string that isn't a literal: left as `%`.
+- [ ] `round`, `oct`: not rewritten.
 
-But should definitely be either:
+## Design questions
 
-```python
-fail("Ambiguous reference URI {} resolved to {} nodes"
-    .format(uri, len(results)))
-```
-
-*OR*
-
-```python
-return Error("Ambiguous reference URI {} resolved to {} nodes"
-    .format(uri, len(results))).unwrap()
-```
-
-### imports     
-
-- [ ] from Crypto.PublicKey import RSA => load("@vendor//Crypto/PublicKey/RSA", "RSA")
-- [x] relative imports:
-  - [x] from .base import y => load("@vendor//pkgname/base/y", y="y")  
-
-- [ ] warn on unknown symbols?
-- [ ] potential corner case: self.xx in dedented functions not in an enclosing function
-
-### desugaring
-
-- [x] decorators should be desugared
-- [x] set literals should be desugared from {} to sets.make()
-
-### complex translations
-
-- [x] sort imports so that they come *before* anything else in the file 
-- [x] solve the from . import X case
-- [x] del
-- [x] rewrite:
-    - [x] a = b = "xyz" to:
-        - a = "xyz"
-        - b = a  
-- [ ] rewrite try/except statements
-- [ ] with statements
-- [ ] `yield from` => `return`  
-
-- [ ] 
-```python
-def do(namespace): 
-    if not namespaces:
-        raise KeyError  # gets translated to return KeyError! WRONG!
-```
-
-- [x] for non-tests, rewrite `assert self._last.tail == None, "internal error (tail)"` to
-      the inverse `if not (self._last.tail == None): ...`
-
-- [ ] `type(text).__name__` or `type(text).__class__.__name__` needs to be changed to `type(text)`
-- [ ] for/else (replace)
-- [x] `_WHILE_LOOP_EMULATION_ITERATION` => `WHILE_LOOP_EMULATION_ITERATION` instead
-- [ ] `events[:index] = []` == `for i in range(index): events.pop(0)` 
-
-    
-- [x] decode()/encode() should be translated to codecs.encode()/codecs.decode()
-- [x] `self.__class__` => `__init__()` or `function()...`
-- [] migrate this:
-```python
-    class ParseError(SyntaxError):
-        """An error when parsing an XML document.
-    
-        In addition to its exception value, a ParseError contains
-        two extra attributes:
-            'code'     - the specific exception code
-            'position' - the line and column of the error
-    
-        """
-    
-        pass
-``` 
-  to:
-
-```python
-    def ParseError(code, position):
-        """An error when parsing an XML document.
-    
-        In addition to its exception value, a ParseError contains
-        two extra attributes:
-            'code'     - the specific exception code
-            'position' - the line and column of the error
-    
-        """
-        return Error("ParseError: (code: %s) (position: %s)" % (code, position))
-```
-- [] `elem[:] = class w/ __getitem__` to `??`
-- [] `warnings` => `??` (delete or print?)
-- [] migrate:
-
-```python
-def foo(target):
-    try:
-        close_handler = target.close
-    except AttributeError:
-        pass
-    else:
-        return close_handler()
-    finally:
-        del target
-```
-
-- [x] implicit string concatanation..
-
-## bug fixes
-
-- [x] `__class__` vs `__name__` (oops!, i misunderstood semantics..)
-
-### exceptions
-
-- [x] Exceptions => fail(), fix up the strings
-  - [x] test string formatting cases as well
-    
-- [ ] ~~fail("TypeError(\"xxxxxx\")") => fail("TypeError: xxxxxx")~~
-- [x] with introduction of `Error` `Ok` object, we no longer need to fail()
-
-### operators
-
-- [x] ** to pow
-
-### bytes:
-  
-- [x] starlark bytes support was merged into starlarky (upstream!) 
-  
-    - if byte literals are in ascii range, do not escape them by converting them to 
-      hex digits 
-      
-      i.e. bytes([0x70, 0x61, 0x73, 0x73, 0x77, 0x6F, 0x72, 0x64]) == bytes("password", encoding="utf-8") == b"password"
-
-### misc:
-
-- [x] remove if __name__ == '__main__'..
-
-- [ ] if methods are referenced in the class, then they should be ordered so that 
-   they are defined first before invoking them in init? test this!
-   
-
-## TODO
-
-- [x] integrate lib3to6
-- [ ] python-future?
-- ~~pybackwards has issues (astunparse)~~
-
-```python
-attr_value = elem.get(key)
-if attr_value != None and attr_value != value:
-```
-- the cli should really be something similar to [instagram/fixit](https://github.com/instagram/fixit)
-
-More transform desugaring ideas here:
-- [pydron](https://github.com/pydron/pydron/tree/master/pydron/translation/dedecorator.py)
-- [pythran](https://github.com/serge-sans-paille/pythran/tree/master/pythran/transformations)
-- [typy](https://github.com/Procrat/typy/blob/master/typy/insuline.py)
-  
-- [x] Rewrite lib2to3 fixers to libcst
-  - [x] Particularly the test generation stuff should be easy to port tests
-
-
-### cannot use load!
-```1123 08:55:57.695 ERROR: stdlib/xml/dom/xmlbuilder.star:405:10: syntax error at 'load': expected identifier after dot```
-
-### [:] doesn't work
-```
-self.childNodes[:] = L
-  =>  self.childNodes.clear()
-      self.childNodes.extend(L)
-```
+- `from Crypto.PublicKey import RSA` becomes
+  `load("@vendor//Crypto/PublicKey", RSA="RSA")`, which treats `RSA` as a
+  symbol of the `PublicKey` module. If `RSA` is a submodule, it should be
+  `load("@vendor//Crypto/PublicKey/RSA", ...)`. py2star can't tell which
+  from the source alone.
+- Warn on names that are used but never defined or loaded?
 
 ## Ideas
 
-```python
-class Algo:
-   x = 1
-   y = 2
-```
+- A class that only holds attributes (`class Algo: x = 1; y = 2`) could
+  become a module with globals `x` and `y`.
+- A command-line interface along the lines of
+  [Instagram's Fixit](https://github.com/instagram/fixit).
+- More desugaring ideas:
+  [pydron](https://github.com/pydron/pydron/tree/master/pydron/translation/dedecorator.py),
+  [pythran](https://github.com/serge-sans-paille/pythran/tree/master/pythran/transformations),
+  [typy](https://github.com/Procrat/typy/blob/master/typy/insuline.py).
 
-should just be migrated to a module called `Algo` with globals of x and y
+## Done
 
+The README lists everything py2star translates; these were on this roadmap:
 
+- try/except/else/finally (via `Result`), generators and `yield from`,
+  `for`/`else` and `while`/`else`, `nonlocal`, `del`, slice assignment
+  ([#23](https://github.com/mahmoudimus/py2star/pull/23)).
+- `raise` keeps its message, including `.format()` messages; `raise X` with
+  no arguments becomes `fail("X")`
+  ([#23](https://github.com/mahmoudimus/py2star/pull/23)).
+- String formatting, including `"%02x"`, through `format()`
+  ([#24](https://github.com/mahmoudimus/py2star/pull/24)).
+- `@property` in both class modes
+  ([#29](https://github.com/mahmoudimus/py2star/pull/29)).
+- `not` in front of a chained comparison; `-t` `TestCase`s with `setUp`
+  state, helper methods and `tearDown`; `--use-mutablestruct` constructor
+  order (`__init__` calling later methods, class attributes on `self`,
+  classes without `__init__`); `warnings.warn` as `print`
+  ([#37](https://github.com/mahmoudimus/py2star/pull/37)).
+- Relative imports resolved from the file's package, with or without `-p`;
+  `.hex()` left to Larky's own; modules made only of imports keep their
+  loads ([#35](https://github.com/mahmoudimus/py2star/pull/35)).
+- `str.encode` to `codecs.encode`, only where the receiver is a `str`
+  ([#31](https://github.com/mahmoudimus/py2star/pull/31)).
+- All transformations are libcst passes; the lib2to3 fixers and lib3to6
+  were removed ([#22](https://github.com/mahmoudimus/py2star/pull/22)).
+- Earlier: decorators, set literals, `a = b = x`, `**`, implicit string
+  concatenation, asserts, imports as `load()` sorted to the top,
+  `if __name__ == "__main__"` removed.
