@@ -176,8 +176,56 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
         #     return types.new_class('Foo', (object,), {}, lambda x: x.update(__ns))
         # Foo = _class_Foo()
 
+        prop = self._property_kind(updated_node)
+        if prop:
+            return self._property_with_new_class(updated_node, prop)
         self.ns.append(updated_node.name.value)
         return updated_node
+
+    def _property_with_new_class(self, updated_node: cst.FunctionDef, prop: str):
+        """
+        @property / @x.setter in a types.new_class class become what Python
+        desugars them to, with larky.property (a data descriptor):
+
+            def _get_x(self): ...
+            x = larky.property(_get_x)
+            def _set_x(self, v): ...
+            x = larky.property(_get_x, _set_x)
+
+        The accessors are renamed because x is rebound to the property.
+        """
+        name = updated_node.name.value
+        getters = self.stack[-1].setdefault("property_getters", set())
+        if prop == "setter" and name not in getters:
+            # e.g. @Base.x.setter: the getter lives in another class
+            return updated_node.with_changes(
+                leading_lines=[
+                    *updated_node.leading_lines,
+                    cst.EmptyLine(
+                        comment=cst.Comment(
+                            f"# PY2LARKY: setter for {name} has no getter in "
+                            "this class"
+                        )
+                    ),
+                ]
+            )
+        if prop == "getter":
+            getters.add(name)
+        accessors = [f"_get_{name}"] + (
+            [f"_set_{name}"] if prop == "setter" else []
+        )
+        AddImportsVisitor.add_needed_import(self.context, "larky")
+        self.ns.append(name)
+        return cst.FlattenSentinel(
+            [
+                updated_node.with_changes(
+                    name=cst.Name(accessors[-1]), decorators=[]
+                ),
+                cst.parse_statement(
+                    f"{name} = larky.property({', '.join(accessors)})"
+                ),
+            ]
+        )
 
     def with_mutablestruct(
         self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
