@@ -780,3 +780,85 @@ def test_encode_rewrite_uses_receiver_type():
     # unknown: only literal codec arguments
     assert 'j = codecs.encode(maybe, encoding="utf-8")' in code
     assert "l = maybe.encode(enc)" in code
+
+
+def _package_tree(tmp_path):
+    """tmp/proj/jose/{__init__,jws}.py and tmp/proj/jose/backends/{__init__,base}.py"""
+    pkg = tmp_path / "proj" / "jose"
+    (pkg / "backends").mkdir(parents=True)
+    for f in ("__init__.py", "jws.py", "backends/__init__.py", "backends/base.py"):
+        (pkg / f).write_text("")
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    (loose / "mod.py").write_text("")
+    return pkg
+
+
+@pytest.mark.parametrize(
+    "pkg_path,relpath,expected",
+    [
+        (None, "proj/jose/jws.py", "jose.jws"),
+        (None, "proj/jose/backends/base.py", "jose.backends.base"),
+        ("jose", "proj/jose/backends/base.py", "jose.backends.base"),
+        ("jose", "proj/jose/__init__.py", "jose.__init__"),
+        ("jose.backends", "proj/jose/backends/base.py", "jose.backends.base"),
+        (None, "loose/mod.py", "loose.mod"),
+        ("mypkg", "loose/mod.py", "mypkg.mod"),
+    ],
+)
+def test_full_module_name_from_the_file_system(tmp_path, monkeypatch, pkg_path, relpath, expected):
+    """#33/#34: the module name comes from __init__.py files, whatever the
+    working directory or path form."""
+    from py2star.cli import _full_module_name
+
+    _package_tree(tmp_path)
+    absolute = str(tmp_path / relpath)
+    assert _full_module_name(pkg_path, absolute) == expected
+    monkeypatch.chdir(tmp_path)
+    assert _full_module_name(pkg_path, relpath) == expected
+    monkeypatch.chdir("/")
+    assert _full_module_name(pkg_path, absolute) == expected
+
+
+def test_relative_imports_resolve_against_the_package(tmp_path):
+    from py2star.cli import _full_module_name
+
+    pkg = _package_tree(tmp_path)
+    source = "from . import get_random_bytes\nfrom .base import Key\nfrom ..utils import b64\n"
+    code = pipeline.larkify(
+        source,
+        full_module_name=_full_module_name(None, str(pkg / "backends" / "base.py")),
+    ).code
+    assert 'load("@vendor//jose/backends", get_random_bytes="get_random_bytes")' in code
+    assert 'load("@vendor//jose/backends/base", Key="Key")' in code
+    assert 'load("@vendor//jose/utils", b64="b64")' in code
+    init = pipeline.larkify(
+        "from .exceptions import JOSEError\n",
+        full_module_name=_full_module_name(None, str(pkg / "__init__.py")),
+    ).code
+    assert 'load("@vendor//jose/exceptions", JOSEError="JOSEError")' in init
+
+
+def test_unresolvable_relative_import_is_left_as_written(capsys):
+    """#33: no module name at all (no file): leave it, don't crash."""
+    code = pipeline.larkify("from . import jwk\nfrom .base import Key\n").code
+    assert "from . import jwk" in code
+    assert "from .base import Key" in code
+    assert "cannot resolve relative import" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        (
+            "import json\nfrom os import path\n",
+            'load("@stdlib//json", json="json")\nload("@stdlib//os", path="path")',
+        ),
+        ('"""doc"""\nimport json\n', '"""doc"""\nload("@stdlib//json", json="json")'),
+        ("import json\nX = 1\n", 'load("@stdlib//json", json="json")\nX = 1'),
+    ],
+)
+def test_loads_kept_in_import_only_modules(source, expected):
+    """Modules made only of imports (re-export __init__.py files) used to
+    lose every load, and a docstring was duplicated."""
+    assert pipeline.larkify(source).code.strip() == expected

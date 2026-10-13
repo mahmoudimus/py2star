@@ -1,10 +1,10 @@
 import argparse
+import pathlib
 import io
 import logging
-import re
 import sys
 import tokenize
-from typing import Optional, Pattern
+from typing import Optional
 
 import libcst
 from py2star import pipeline
@@ -133,23 +133,37 @@ def larkify(filename, args):
         print(functionz.testsuite_generator(program))
 
 
-DOT_PY: Pattern[str] = re.compile(r"(__init__)?\.py$")
+def _full_module_name(pkg_path: Optional[str], filename: str) -> Optional[str]:
+    """The dotted module name of filename, used to resolve relative imports.
 
+    It is found from the file system, by walking up the directories that
+    hold an ``__init__.py``, so it doesn't depend on the working directory
+    or on whether the path is absolute. A package's ``__init__.py`` is
+    named ``pkg.__init__``, so its relative imports resolve against ``pkg``.
 
-def _module_name(path: str) -> Optional[str]:
-    return DOT_PY.sub("", path).replace("/", ".").rstrip(".")
-
-
-def _full_module_name(pkg_path, filename):
-    # use file_path to compute relative path?
-    # >>> os.path.relpath("/src/python-jose/jose/jwt.py", "/src/python-jose")
-    # 'jose/jwt.py'
+    ``-p`` (pkg_path) names the package root: when the walk doesn't reach
+    it, the package directory is looked up in the path, and failing that
+    the file is treated as a module directly inside it. Without ``-p``, a
+    file in no package is treated as a module of its directory.
+    """
+    path = pathlib.Path(filename).resolve()
+    parts = [path.stem]
+    parent = path.parent
+    while (parent / "__init__.py").exists():
+        parts.insert(0, parent.name)
+        parent = parent.parent
     if not pkg_path:
-        return None
-    mname = _module_name(filename)
-    if not mname.startswith(pkg_path + "."):
-        return f"{pkg_path}.{mname}"
-    return mname
+        if len(parts) == 1 and path.parent.name:
+            parts.insert(0, path.parent.name)
+        return ".".join(parts) if len(parts) > 1 else None
+    pkg = pkg_path.split(".")
+    if parts[: len(pkg)] == pkg:
+        return ".".join(parts)
+    dirs = list(path.parent.parts)
+    for i in range(len(dirs) - len(pkg), -1, -1):
+        if dirs[i : i + len(pkg)] == pkg:
+            return ".".join(dirs[i:] + [path.stem])
+    return ".".join(pkg + [path.stem])
 
 
 def execute(args: argparse.Namespace) -> None:

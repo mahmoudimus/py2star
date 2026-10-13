@@ -129,11 +129,10 @@ class SwapByteStringPrefixes(codemod.ContextAwareTransformer):
 
 class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
     """
-    str.decode(xxxx) => codecs.decode(xxxx)
     str.encode(xxxx) => codecs.encode(xxxx)
+    codecs.encode(b, "hex") => binascii.hexlify(b)
 
-    hex() => hexlify()
-    etc etc
+    bytes.hex() is left as is: Larky supports it natively.
 
     if not m.matches(
         updated_node,
@@ -382,29 +381,6 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
                 cst.Arg(value=v, keyword=cst.Name(k), equal=eq)
                 for k, v in kwargs.items()
             ],
-        )
-
-    # TODO: I dont' think the below is no longer needed
-    @m.call_if_inside(
-        m.Call(
-            func=m.Attribute(
-                value=m.DoNotCare(),
-                attr=m.Name("hex"),
-            ),
-            args=[],
-        )
-    )
-    @m.leave(m.Call(func=m.Attribute(value=m.DoNotCare(), attr=m.Name("hex"))))
-    def rewrite_hex_to_hexlify(
-        self, on: "Call", un: "Call"
-    ) -> "BaseExpression":
-        AddImportsVisitor.add_needed_import(self.context, "codecs")
-        AddImportsVisitor.add_needed_import(self.context, "binascii")
-        return un.deep_replace(
-            un,
-            cst.parse_expression(
-                f"codecs.decode(binascii.hexlify({un.func.value.value}), encoding='utf-8')"
-            ),
         )
 
 
