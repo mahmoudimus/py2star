@@ -907,6 +907,7 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
                 return self
             self = __init__()
             return self
+
         def Bar(var, value):
             self = larky.mutablestruct(__name__='Bar', __class__=Bar)
             def __init__(var, value):
@@ -914,22 +915,23 @@ class TestClassRewriting(MetadataResolvingCodemodTest):
                 return self
             self = __init__(var, value)
             return self
+
         def Complicated(x, y, z=1):
             self = larky.mutablestruct(__name__='Complicated', __class__=Complicated)
             def __init__(x, y, z):
                 pass
                 return self
             self = __init__(x, y, z)
-        
+
             def foo(one, two=2):
                 pass
             self.foo = foo
-            
+
             def doit(a, b):
                 pass
             self.doit = doit
             return self
-            """
+        """
         self.assertCodemod(
             before, after, remove_decorators=True, use_mutablestruct=True
         )

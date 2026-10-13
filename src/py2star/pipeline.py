@@ -89,6 +89,12 @@ def transform_passes(
         passes += [
             rewrite_tests.UnittestAssertMethodsRewriter(context),
             rewrite_tests.Unittest2Functions(context),
+            # classes that are not TestCases (helpers) become functions too
+            rewrite_class.ClassToFunctionRewriter(
+                context,
+                remove_decorators=False,
+                use_mutablestruct=options.use_mutablestruct,
+            ),
         ]
     else:
         # we don't want class to function rewriter for tests since

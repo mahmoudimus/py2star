@@ -1,6 +1,7 @@
 """
 Syntactic desugaring: rewrite Python-only syntax into constructs Starlark supports.
 """
+import codecs
 import functools
 from typing import Union
 import warnings
@@ -25,6 +26,7 @@ from libcst.metadata import (
     ParentNodeProvider,
     QualifiedNameProvider,
     QualifiedNameSource,
+    ScopeProvider,
 )
 
 
@@ -149,6 +151,192 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
     """
 
     _HEX_CODECS = ('"hex"', "'hex'", '"hex_codec"', "'hex_codec'")
+    METADATA_DEPENDENCIES = (
+        QualifiedNameProvider,
+        ScopeProvider,
+        ParentNodeProvider,
+    )
+
+    @staticmethod
+    def _is_str_value(node: cst.BaseExpression) -> bool:
+        """An expression that always produces a str."""
+        if isinstance(node, (cst.SimpleString, cst.ConcatenatedString)):
+            value = node.evaluated_value
+            return isinstance(value, str)
+        if isinstance(node, cst.FormattedString):
+            return True
+        if m.matches(node, m.Call(func=m.Name("str") | m.Name("repr") | m.Name("format"))):
+            return True
+        if m.matches(
+            node,
+            m.Call(
+                func=m.Attribute(
+                    value=m.SimpleString() | m.ConcatenatedString(),
+                    attr=m.Name("format") | m.Name("join"),
+                )
+            ),
+        ):
+            return SubMethodsWithLibraryCallsInstead._is_str_value(node.func.value)
+        if isinstance(node, cst.BinaryOperation) and isinstance(
+            node.operator, (cst.Add, cst.Modulo)
+        ):
+            # str + x and str % x are str (or raise)
+            return SubMethodsWithLibraryCallsInstead._is_str_value(node.left)
+        return False
+
+    _NOT_STR = (
+        cst.Integer,
+        cst.Float,
+        cst.Imaginary,
+        cst.List,
+        cst.Tuple,
+        cst.Dict,
+        cst.Set,
+        cst.ListComp,
+        cst.DictComp,
+        cst.SetComp,
+    )
+
+    def _receiver_type(self, receiver: cst.BaseExpression) -> str:
+        """"str", "not str" or "unknown", from the assignments that can reach
+        a name (both branches of an if, loop reassignments, parameters)."""
+        if self._is_str_value(receiver):
+            return "str"
+        if not isinstance(receiver, cst.Name):
+            return "unknown"
+        referents = self._referents(receiver)
+        if not referents:
+            return "unknown"
+        kinds = {self._assignment_type(ref) for ref in referents}
+        if "not str" in kinds:
+            return "not str"
+        return "str" if kinds == {"str"} else "unknown"
+
+    def _referents(self, name: cst.Name) -> list:
+        """The assignments that can reach this use of a name."""
+        scope = self.get_metadata(ScopeProvider, name, None)
+        if scope is None:
+            return []
+        return [
+            ref
+            for access in scope.accesses[name]
+            if access.node is name
+            for ref in access.referents
+        ]
+
+    def _assignment_type(self, ref) -> str:
+        node = ref.node
+        if isinstance(node, (cst.Import, cst.ImportFrom, cst.ClassDef, cst.FunctionDef)):
+            return "not str"
+        if isinstance(node, cst.Param):
+            annotated_str = m.matches(
+                node, m.Param(annotation=m.Annotation(m.Name("str")))
+            )
+            return "str" if annotated_str else "unknown"
+        parent = self.get_metadata(ParentNodeProvider, node, None)
+        if isinstance(parent, cst.AnnAssign):
+            if m.matches(parent.annotation, m.Annotation(m.Name("str"))):
+                return "str"
+            value = parent.value
+        elif isinstance(parent, cst.AssignTarget):
+            value = self.get_metadata(ParentNodeProvider, parent).value
+        elif isinstance(parent, cst.AugAssign):
+            value = parent.value
+        else:
+            # for-loop targets, tuple unpacking, with ... as, etc.
+            return "unknown"
+        if value is None:
+            return "unknown"
+        if self._is_str_value(value):
+            return "str"
+        if isinstance(value, self._NOT_STR) or m.matches(
+            value, m.SimpleString(value=m.MatchRegex(r"(?is)r?br?['\"].*"))
+        ):
+            return "not str"
+        if m.matches(value, m.Call(func=m.Name())) and any(
+            isinstance(r.node, cst.ClassDef) for r in self._referents(value.func)
+        ):
+            # an instance of a class defined here
+            return "not str"
+        return "unknown"
+
+    def _is_str_encode(self, call: "Call") -> bool:
+        """Whether x.encode(...) is str.encode(encoding, errors).
+
+        Receivers are typed from the assignments that can reach them. A
+        known str accepts any str.encode-shaped call; a known non-str (an
+        import, a class, a number, a list...) never matches. Otherwise this
+        goes by shape: not a call on an imported module or name
+        (jwt.encode, base64...), at most the two str.encode arguments, and
+        literal arguments that are a real codec and error handler. Anything
+        else is left as is, so it fails loudly in Larky instead of calling
+        the wrong function.
+        """
+        receiver = call.func.value
+        args = call.args
+        shaped = len(args) <= 2 and not any(a.star for a in args) and not any(
+            a.keyword and a.keyword.value not in ("encoding", "errors")
+            for a in args
+        )
+        kind = self._receiver_type(receiver)
+        if kind == "not str" or not shaped:
+            return False
+        if kind == "str":
+            return True
+        base = receiver
+        while isinstance(base, cst.Attribute):
+            base = base.value
+        if isinstance(base, cst.Name) and any(
+            q.source == QualifiedNameSource.IMPORT
+            for q in self.get_metadata(QualifiedNameProvider, base, set())
+        ):
+            return False
+        args = call.args
+        if len(args) > 2 or any(a.star for a in args):
+            return False
+        if any(
+            a.keyword and a.keyword.value not in ("encoding", "errors")
+            for a in args
+        ):
+            return False
+        for i, a in enumerate(args):
+            kind = a.keyword.value if a.keyword else ("encoding", "errors")[i]
+            literal = (
+                a.value.evaluated_value
+                if isinstance(a.value, (cst.SimpleString, cst.ConcatenatedString))
+                else None
+            )
+            if literal is None:
+                if not a.keyword:
+                    # a positional non-literal: not recognizably str.encode
+                    return False
+                continue
+            if kind == "encoding" and not self._is_codec(literal):
+                return False
+            if kind == "errors" and literal not in self._ERROR_HANDLERS:
+                return False
+        return True
+
+    _ERROR_HANDLERS = frozenset(
+        (
+            "strict",
+            "ignore",
+            "replace",
+            "backslashreplace",
+            "xmlcharrefreplace",
+            "namereplace",
+            "surrogateescape",
+            "surrogatepass",
+        )
+    )
+
+    @staticmethod
+    def _is_codec(name) -> bool:
+        try:
+            codecs.lookup(name)
+        except (LookupError, TypeError):
+            return False
+        return True
 
     def leave_Call(self, original_node: "Call", updated_node: "Call"):
         func = updated_node.func
@@ -173,6 +361,9 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
             return updated_node
         if method != "encode":
             # ignore bytes.decode() since we support that now.
+            return updated_node
+        if not self._is_str_encode(original_node):
+            # e.g. jwt.encode(claims, key, algorithm=...): not str.encode
             return updated_node
         # s.encode(encoding, errors) => codecs.encode(s, encoding=..., errors=...)
         AddImportsVisitor.add_needed_import(self.context, "codecs")

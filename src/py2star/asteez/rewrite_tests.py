@@ -23,7 +23,6 @@ from libcst.codemod.visitors import AddImportsVisitor, RemoveImportsVisitor
 
 from py2star.asteez.rewrite_class import (
     ClassInstanceVariableRemover,
-    ClassToFunctionRewriter,
     FunctionParameterStripper,
     PrefixMethodByClsName,
     UndecorateClassMethods,
@@ -356,6 +355,24 @@ class UnittestAssertMethodsRewriter(cst.codemod.ContextAwareTransformer):
         )
 
 
+# class Foo(unittest.TestCase) / class Foo(TestCase)
+_TESTCASE = m.ClassDef(
+    bases=[
+        m.AtLeastN(
+            n=1,
+            matcher=m.OneOf(
+                m.Arg(
+                    value=m.Attribute(
+                        value=m.Name("unittest"), attr=m.Name("TestCase")
+                    )
+                ),
+                m.Arg(value=m.Name("TestCase")),
+            ),
+        )
+    ]
+)
+
+
 class DedentModule(codemod.ContextAwareTransformer):
     def leave_Module(
         self, original_node: "cst.Module", updated_node: "cst.Module"
@@ -367,29 +384,10 @@ class DedentModule(codemod.ContextAwareTransformer):
                 module_body.append(stmt)
                 continue
             classdef = cst.ensure_type(stmt, cst.ClassDef)
-            if not m.matches(
-                classdef,
-                m.ClassDef(
-                    bases=[
-                        m.AtLeastN(
-                            n=1,
-                            matcher=m.OneOf(
-                                m.Arg(
-                                    value=m.Attribute(
-                                        value=m.Name("unittest"),
-                                        attr=m.Name("TestCase"),
-                                    )
-                                ),
-                                m.Arg(value=m.Name("TestCase")),
-                            ),
-                        )
-                    ]
-                ),
-            ):
-                cf = ClassToFunctionRewriter(
-                    self.context, remove_decorators=True
-                )
-                classdef = classdef.visit(cf)
+            if not m.matches(classdef, _TESTCASE):
+                # not a TestCase: left for ClassToFunctionRewriter, which
+                # runs after this as its own pass (it needs scope metadata,
+                # which a bare classdef.visit() does not resolve)
                 module_body.append(classdef)
                 continue
             # here is where we start on the indent blocks
@@ -423,10 +421,22 @@ class Unittest2Functions(codemod.ContextAwareTransformer):
         super(Unittest2Functions, self).__init__(context)
         self.class_name = class_name
         self.class_bases = None
+        # [is_testcase, name, function depth] per enclosing class
+        self._classes = []
 
     def visit_ClassDef(self, node: cst.ClassDef) -> typing.Optional[bool]:
         self.class_name = node.name.value
         self.class_bases = node.bases
+        self._classes.append([m.matches(node, _TESTCASE), node.name.value, 0])
+        return True
+
+    def leave_ClassDef(self, original_node, updated_node):
+        self._classes.pop()
+        return updated_node
+
+    def visit_FunctionDef(self, node: cst.FunctionDef) -> typing.Optional[bool]:
+        if self._classes:
+            self._classes[-1][2] += 1
         return True
 
     # def leave_ClassDef(
@@ -448,12 +458,20 @@ class Unittest2Functions(codemod.ContextAwareTransformer):
         cst.FlattenSentinel[cst.BaseStatement],
         cst.RemovalSentinel,
     ]:
+        if not self._classes:
+            return updated_node
+        is_testcase, class_name, depth = self._classes[-1]
+        self._classes[-1][2] -= 1
+        if not is_testcase or depth != 1:
+            # helper classes are left for ClassToFunctionRewriter, and
+            # functions nested in a test method keep their names
+            return updated_node
         un = updated_node.visit(
             FunctionParameterStripper(self.context, ["self"])
         )
         un = un.visit(ClassInstanceVariableRemover(self.context, ["self"]))
         un = un.visit(UndecorateClassMethods(self.context))
-        un = un.visit(PrefixMethodByClsName(self.context, self.class_name))
+        un = un.visit(PrefixMethodByClsName(self.context, class_name))
         return un
 
     def leave_Module(

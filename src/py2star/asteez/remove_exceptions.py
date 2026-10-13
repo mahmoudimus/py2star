@@ -303,69 +303,48 @@ class CommentTopLevelTryBlocks(codemod.ContextAwareTransformer):
     def __init__(self, context=None):
         context = context if context else CodemodContext()
         super(CommentTopLevelTryBlocks, self).__init__(context)
-        self._herp = []
-        self._node = None
-
-    def visit_Module(self, node: "Module") -> typing.Optional[bool]:
-        return None
+        # top-level try statements (by identity) -> their commented-out lines
+        self._commented: typing.List[typing.Tuple[cst.Try, list]] = []
 
     def leave_Module(
         self, original_node: "Module", updated_node: "Module"
     ) -> "Module":
-        if not self._herp:
+        if not self._commented:
             return updated_node
-        body_ = []
+        # A module body holds only statements, so the commented-out lines
+        # become leading lines of the statement after the try, or the
+        # module footer when nothing follows.
+        body_, pending = [], []
         for b in updated_node.body:
-            # identity `is` check here to find the *node* we marked!
-            if b is self._node:
-                # replace the node with the commented body
-                body_.extend(self._herp)
+            lines = next((ls for t, ls in self._commented if t is b), None)
+            if lines is not None:
+                pending.extend([*b.leading_lines, *lines])
                 continue
+            if pending:
+                b = b.with_changes(leading_lines=[*pending, *b.leading_lines])
+                pending = []
             body_.append(b)
-        return updated_node.with_changes(body=body_)
-        # cst.parse_statement(f"", config=updated_node.config_for_parsing)
-        # return updated_node
-
-    def visit_Try(self, node: "Try") -> typing.Optional[bool]:
-        pos = self.get_metadata(cst.metadata.PositionProvider, node)
-        self._startpos = pos.start
+        return updated_node.with_changes(
+            body=body_, footer=[*pending, *updated_node.footer]
+        )
 
     def leave_Try(
         self, original_node: "Try", updated_node: "Try"
     ) -> Union[
         "BaseStatement", FlattenSentinel["BaseStatement"], RemovalSentinel
     ]:
-        pos = self.get_metadata(cst.metadata.PositionProvider, original_node)
-        self._endpos = pos.end
         scope = self.get_metadata(cst.metadata.ScopeProvider, original_node)
-
-        # # The below does not work for some reason
-        # # TODO: figure it out
-        # if m.matches(
-        #     updated_node,
-        #     m.Try(
-        #         body=m.DoNotCare(),
-        #         metadata=m.MatchMetadata(
-        #             cst.metadata.ScopeProvider, {cst.metadata.GlobalScope()}
-        #         ),
-        #     ),
-        # ):
-        #     pass
-        # Using isinstance as a back up for now.
         if not isinstance(scope, cst.metadata.GlobalScope):
             return updated_node
         codegen = cst.parse_module(
             "", config=self.context.module.config_for_parsing
         )
-        self._herp = [
-            self._comment_line(line)
-            # we do -1 here to remove the trailing whitespace
-            for line in codegen.code_for_node(updated_node).split("\n")[:-1]
-        ]
-        self._node = updated_node
-        # we won't remove this from the parent b/c we plan on replacing the
-        # exact position in the updated module:
-        # return cst.RemoveFromParent()
+        code = codegen.code_for_node(updated_node.with_changes(leading_lines=[]))
+        self._commented.append(
+            # [:-1] drops the empty string after the final newline
+            (updated_node, [self._comment_line(line) for line in code.split("\n")[:-1]])
+        )
+        # replaced (by identity) in leave_Module
         return updated_node
 
     def _comment_line(self, line):
