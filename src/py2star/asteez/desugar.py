@@ -1,6 +1,7 @@
 """
 Syntactic desugaring: rewrite Python-only syntax into constructs Starlark supports.
 """
+import codecs
 import functools
 from typing import Union
 import warnings
@@ -149,6 +150,72 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
     """
 
     _HEX_CODECS = ('"hex"', "'hex'", '"hex_codec"', "'hex_codec'")
+    METADATA_DEPENDENCIES = (QualifiedNameProvider,)
+
+    def _is_str_encode(self, call: "Call") -> bool:
+        """Whether x.encode(...) looks like str.encode(encoding, errors).
+
+        Receivers can't be typed, so this goes by shape: not a call on an
+        imported module or name (jwt.encode, base64...), at most the two
+        str.encode arguments, and an encoding given positionally only as a
+        string literal. Anything else is left as is, so it fails loudly in
+        Larky instead of calling the wrong function.
+        """
+        receiver = call.func.value
+        base = receiver
+        while isinstance(base, cst.Attribute):
+            base = base.value
+        if isinstance(base, cst.Name) and any(
+            q.source == QualifiedNameSource.IMPORT
+            for q in self.get_metadata(QualifiedNameProvider, base, set())
+        ):
+            return False
+        args = call.args
+        if len(args) > 2 or any(a.star for a in args):
+            return False
+        if any(
+            a.keyword and a.keyword.value not in ("encoding", "errors")
+            for a in args
+        ):
+            return False
+        for i, a in enumerate(args):
+            kind = a.keyword.value if a.keyword else ("encoding", "errors")[i]
+            literal = (
+                a.value.evaluated_value
+                if isinstance(a.value, (cst.SimpleString, cst.ConcatenatedString))
+                else None
+            )
+            if literal is None:
+                if not a.keyword:
+                    # a positional non-literal: not recognizably str.encode
+                    return False
+                continue
+            if kind == "encoding" and not self._is_codec(literal):
+                return False
+            if kind == "errors" and literal not in self._ERROR_HANDLERS:
+                return False
+        return True
+
+    _ERROR_HANDLERS = frozenset(
+        (
+            "strict",
+            "ignore",
+            "replace",
+            "backslashreplace",
+            "xmlcharrefreplace",
+            "namereplace",
+            "surrogateescape",
+            "surrogatepass",
+        )
+    )
+
+    @staticmethod
+    def _is_codec(name) -> bool:
+        try:
+            codecs.lookup(name)
+        except (LookupError, TypeError):
+            return False
+        return True
 
     def leave_Call(self, original_node: "Call", updated_node: "Call"):
         func = updated_node.func
@@ -173,6 +240,9 @@ class SubMethodsWithLibraryCallsInstead(codemod.ContextAwareTransformer):
             return updated_node
         if method != "encode":
             # ignore bytes.decode() since we support that now.
+            return updated_node
+        if not self._is_str_encode(original_node):
+            # e.g. jwt.encode(claims, key, algorithm=...): not str.encode
             return updated_node
         # s.encode(encoding, errors) => codecs.encode(s, encoding=..., errors=...)
         AddImportsVisitor.add_needed_import(self.context, "codecs")

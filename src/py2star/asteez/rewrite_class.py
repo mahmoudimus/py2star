@@ -504,6 +504,8 @@ class ClassToFunctionRewriter(codemod.ContextAwareTransformer):
                 name=cst.Name(value=new_name),
                 params=params,
                 body=body,
+                # keep comments and blank lines above the class
+                leading_lines=updated_node.leading_lines,
             ),
         )
         self.stack.pop()

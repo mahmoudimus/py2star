@@ -620,3 +620,111 @@ def test_translated_formatting_runs_the_same_in_cpython(capsys):
     )
     exec(compile(body, "formatting.star", "exec"), {})
     assert capsys.readouterr().out == expected
+
+
+def test_encode_rewrite_only_for_str_encode():
+    """#27: only calls shaped like str.encode become codecs.encode."""
+    code = larkify(
+        """
+        import json
+        from jose import jwt
+
+        def f(s, enc, encoder):
+            a = jwt.encode(claims, key, algorithm="HS256")
+            b = jwt.encode(claims)
+            c = json.JSONEncoder().encode(obj)
+            d = encoder.encode(obj)
+            e = s.encode(enc)
+            g = s.encode("utf-8")
+            h = s.encode()
+            i = s.encode(encoding=enc, errors="ignore")
+            k = encoder.encode("v", ":")
+            return a, b, c, d, e, g, h, i, k
+        """
+    )
+    for unchanged in (
+        'encoder.encode("v", ":")',
+        'jwt.encode(claims, key, algorithm="HS256")',
+        "jwt.encode(claims)",
+        "json.JSONEncoder().encode(obj)",
+        "encoder.encode(obj)",
+        "s.encode(enc)",
+    ):
+        assert unchanged in code
+    assert 'g = codecs.encode(s, encoding="utf-8")' in code
+    assert 'h = codecs.encode(s, encoding="utf-8")' in code
+    assert 'i = codecs.encode(s, encoding=enc, errors="ignore")' in code
+
+
+def test_top_level_try_blocks_are_commented_out():
+    """#28: every top-level try is commented out, and the module stays valid."""
+    code = larkify(
+        """
+        import unittest
+
+        # fast path
+        try:
+            import ujson as json
+        except ImportError:
+            import json
+
+        X = 1
+
+        try:
+            from datetime import UTC
+        except ImportError:
+            UTC = None
+
+
+        class Thing(object):
+            pass
+
+        try:
+            import last
+        except ImportError:
+            last = None
+        """
+    )
+    assert "# fast path\n# try:\n#     import ujson as json\n" in code
+    assert "# try:\n#     from datetime import UTC\n# except ImportError:\n#     UTC = None\n" in code
+    # comments above a class survive the class rewrite
+    assert code.index("#     UTC = None") < code.index("def _class_Thing")
+    # a try at the very end goes to the module footer
+    assert code.rstrip().endswith("#     last = None")
+    cst.parse_module(code)
+
+
+def test_tests_mode_translates_helper_classes():
+    """#30: -t no longer crashes on classes that are not TestCases, and only
+    TestCase methods get the test treatment."""
+    code = larkify(
+        """
+        import unittest
+
+        class Helper(object):
+            LIMIT = 3
+
+            def __init__(self, n):
+                self.n = n
+
+            def double(self):
+                return self.n * 2
+
+        class TestThing(unittest.TestCase):
+            def test_one(self):
+                def chunk(x):
+                    return x
+                self.assertEqual(chunk(Helper(2).double()), 4)
+
+        def standalone(self):
+            return self
+        """,
+        for_tests=True,
+    )
+    assert "def _class_Helper():" in code
+    assert "def __init__(self, n):\n        self.n = n" in code
+    assert "def double(self):\n        return self.n * 2" in code
+    assert "def TestThing_test_one():" in code
+    # nested functions and top-level functions keep their names
+    assert "def chunk(x):" in code
+    assert "def standalone(self):" in code
