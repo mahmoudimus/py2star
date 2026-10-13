@@ -472,17 +472,16 @@ class TestSubMethodsWithLibraryCallsInstead(MetadataResolvingCodemodTest):
         ctx = self._get_context_override(before)
         self.assertCodemod(before, after, context_override=ctx)
 
-    def test_convert_hex_to_hexlify(self):
+    def test_hex_is_left_alone(self):
+        # Larky's bytes have .hex(); #32: a call receiver used to crash
         before = """
         b"foo".hex()
-        """
-
-        after = """
-        codecs.decode(binascii.hexlify(b"foo"), encoding='utf-8')
+        bytes(data).hex()
+        _xor(block, pan).hex().upper()
         """
 
         ctx = self._get_context_override(before)
-        self.assertCodemod(before, after, context_override=ctx)
+        self.assertCodemod(before, before, context_override=ctx)
 
 
 class TestRewriteImplicitStringConcat(MetadataResolvingCodemodTest):

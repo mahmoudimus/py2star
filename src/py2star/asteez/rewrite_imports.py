@@ -188,6 +188,9 @@ class RewriteImports(codemod.ContextAwareTransformer):
         mod_name = None
         if type(updated_node) == cst.ImportFrom:
             mod_name = self._on_import_from(updated_node)
+            if mod_name is None:
+                # an unresolvable relative import: leave it as written
+                return updated_node
         elif type(updated_node) == cst.Import:
             assert (
                 type(updated_node.names[0]) == cst.ImportAlias
@@ -235,15 +238,14 @@ class RewriteImports(codemod.ContextAwareTransformer):
                 return mod_name
 
         # we are a relative import!
-        if self.context.full_module_name is None and mod_name:
+        if self.context.full_module_name is None:
             print(
-                "attempting to rewrite relative import",
-                mod_name,
-                "with an unknown module name! trans-compilation will need to "
-                "be run with -p command because root mod name is ambiguous..",
+                "cannot resolve relative import",
+                "." * relative_imports + mod_name,
+                "without the module's name; pass the file name, or -p",
                 file=sys.stderr,
             )
-            name_root = ""
+            return None
         else:
             # split the full module name to find out where we are
             paths = self.context.full_module_name.split(".")
@@ -369,49 +371,30 @@ class LarkyImportSorter(codemod.ContextAwareTransformer):
     def leave_Module(
         self, original_node: libcst.Module, updated_node: libcst.Module
     ) -> libcst.Module:
-        body = []
-        if not updated_node.body:
+        # the loads collected (and removed) above, sorted in lexicographic
+        # order; ties break on the full load() so output does not depend on
+        # set order
+        loads = [
+            cst.SimpleStatementLine(body=[cst.Expr(value=call)])
+            for _, call in sorted(
+                self.names,
+                key=lambda x: (x[0].value, cst.Module([]).code_for_node(x[1])),
+            )
+        ]
+        if not loads:
             return updated_node
-        i = 0
-        statement = None
-        for _i, _statement in enumerate(updated_node.body):
-            i = _i
-            statement = _statement
-            # keep going until we hit a search
-            if m.matches(
-                statement,
-                m.SimpleStatementLine(body=[m.Expr(value=m.SimpleString())]),
-            ):
-                body.append(statement)
-            else:
-                body.extend(
-                    cst.SimpleStatementLine(body=[cst.Expr(value=y)])
-                    # sort imports in lexicographic order; break ties on
-                    # the full load() so output does not depend on set order
-                    for x, y in sorted(
-                        self.names,
-                        key=lambda x: (x[0].value, cst.Module([]).code_for_node(x[1])),
-                    )
-                )
-                break
-
-        # if we do not actually have any imports, just return
-        if not body:
-            return updated_node
-
-        # check for leading lines (empty lines or comments) before
-        # the next item in the body and move it above
-        first_item = body[-len(self.names)]
-
-        # copy the leading lines from the next statement
-        # and put it on the last body item
-        if m.matches(statement, m.SimpleStatementLine()) and statement.leading_lines:
-            first_item = first_item.with_changes(leading_lines=statement.leading_lines)
-            statement = statement.with_changes(leading_lines=[cst.EmptyLine()])
-            body[-len(self.names)] = first_item
-        body.append(statement)
-
-        if i + 1 < len(updated_node.body):
-            body.extend(updated_node.body[i + 1 :])
-
-        return updated_node.with_changes(body=body)
+        statements = list(updated_node.body)
+        # module docstrings stay first
+        k = 0
+        while k < len(statements) and m.matches(
+            statements[k],
+            m.SimpleStatementLine(body=[m.Expr(value=m.SimpleString())]),
+        ):
+            k += 1
+        rest = statements[k:]
+        # move the next statement's leading lines (blank lines, comments)
+        # above the loads
+        if rest and m.matches(rest[0], m.SimpleStatementLine()) and rest[0].leading_lines:
+            loads[0] = loads[0].with_changes(leading_lines=rest[0].leading_lines)
+            rest[0] = rest[0].with_changes(leading_lines=[cst.EmptyLine()])
+        return updated_node.with_changes(body=statements[:k] + loads + rest)
