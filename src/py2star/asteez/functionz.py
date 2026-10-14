@@ -237,11 +237,6 @@ class RewriteTypeChecks(codemod.ContextAwareTransformer):
     def leave_Call(
         self, original_node: "Call", updated_node: "Call"
     ) -> "BaseExpression":
-        AddImportsVisitor.add_needed_import(
-            self.context,
-            "larky",
-            "larky",
-        )
         if m.matches(updated_node, m.Call(func=m.Name("isinstance"))):
             AddImportsVisitor.add_needed_import(
                 self.context,

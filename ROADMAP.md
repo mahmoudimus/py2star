@@ -15,6 +15,11 @@ Wrong output from py2star:
   built-in in starlarky, so py2star can emit
   `operator.setitem(x, slice(i, j), v)`.
 
+- [ ] A class defined inside a class is never attached to it: the nested
+  class becomes a local (`Inner = _class_Inner()`, or `def Inner()` with
+  `--use-mutablestruct`) that is left out of `__ns` / never set on `self`,
+  so `self.Inner` and `Outer.Inner` don't resolve.
+
 ## Python that py2star leaves as is, and Larky rejects
 
 - [ ] `with ... as ...` statements.

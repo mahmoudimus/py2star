@@ -948,3 +948,17 @@ def test_mutablestruct_constructor_order():
     assert a.index("self.later = later") < a.index("self = __init__(n)") < a.rindex("return self")
     assert "self = larky.mutablestruct(__name__='NoInit', __class__=NoInit)" in code
     assert code.count('load("@stdlib//larky"') == 1
+
+
+@pytest.mark.parametrize(
+    "source, needs_larky",
+    [
+        ("def f(x):\n    return g(x)\n", False),
+        ("def f(x):\n    return isinstance(x, int) or callable(x)\n", False),
+        ("def f(a, b):\n    return issubclass(a, b)\n", True),
+    ],
+)
+def test_larky_loaded_only_when_used(source, needs_larky):
+    code = larkify(source)
+    assert ('load("@stdlib//larky"' in code) == needs_larky
+    assert ("larky." in code) == needs_larky
